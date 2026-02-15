@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Loader2, ShieldCheck, Timer, ArrowLeft } from 'lucide-react';
-import { getApiUrl } from '@/utils/api';
+import { apiFetch } from '@/utils/api';
 
 type LoginStep1Response = {
     totpRequired: boolean;
@@ -55,7 +55,7 @@ export const LoginPage = ({
         setError(null);
 
         try {
-            const res = await fetch(getApiUrl('auth/login'), {
+            const res = await apiFetch('auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
@@ -91,7 +91,7 @@ export const LoginPage = ({
         setError(null);
 
         try {
-            const res = await fetch(getApiUrl('auth/login/totp'), {
+            const res = await apiFetch('auth/login/totp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ challengeId, code }),

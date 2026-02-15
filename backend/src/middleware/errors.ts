@@ -1,15 +1,34 @@
 import type { NextFunction, Request, Response } from 'express';
 
 export function notFound(_req: Request, res: Response) {
-    res.status(404).json({ error: 'Not found' });
+    res.status(404).json({ error: 'Not found', requestId: res.locals.requestId });
 }
 
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
     const isProd = process.env.NODE_ENV === 'production';
     const message = err instanceof Error ? err.message : 'Unknown error';
+    const requestId = String(res.locals.requestId || '-');
+
+    const errorLog = {
+        level: 'error',
+        requestId,
+        method: req.method,
+        path: req.originalUrl,
+        message,
+        stack: err instanceof Error ? err.stack : undefined,
+    };
+
     if (!isProd) {
-        // eslint-disable-next-line no-console
-        console.error(err);
+        console.error(errorLog);
+    } else {
+        console.error({
+            ...errorLog,
+            stack: undefined,
+        });
     }
-    res.status(500).json({ error: isProd ? 'Internal server error' : message });
+
+    res.status(500).json({
+        error: isProd ? 'Internal server error' : message,
+        requestId,
+    });
 }

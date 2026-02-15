@@ -18,7 +18,7 @@ import {
   Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getApiUrl } from '@/utils/api';
+import { apiFetch } from '@/utils/api';
 
 // --- Types & Constants ---
 
@@ -137,6 +137,15 @@ const SEVERITY_THEME: Record<Severity, { textClass: string; bgClass: string; wid
   5: { textClass: 'text-red-500', bgClass: 'bg-red-500', widthClass: 'w-full' },
 };
 
+const FLY_DURATION_CLASS: Record<number, string> = {
+  0.4: 'fly-duration-040',
+  0.6: 'fly-duration-060',
+  1: 'fly-duration-100',
+  1.3: 'fly-duration-130',
+  1.6: 'fly-duration-160',
+  2: 'fly-duration-200',
+};
+
 interface MapPageProps {
   user: { id: string; name: string } | null;
   onLoginRequest: () => void;
@@ -193,7 +202,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   // Real-time Polling
   useEffect(() => {
     const interval = setInterval(() => {
-      fetch(getApiUrl('pollution'))
+      apiFetch('pollution')
         .then(r => r.json())
         .then(data => {
           if (Array.isArray(data?.markers)) {
@@ -210,7 +219,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // --- Highlight target marker with ring pulse ---
+  // --- Highlight target marker with pulsating circle ---
   const highlightMarker = useCallback((lat: number, lng: number) => {
     if (!mapRef.current || !highlightLayerRef.current) return;
 
@@ -218,18 +227,36 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     highlightLayerRef.current.clearLayers();
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
 
-    const highlightIcon = L.divIcon({
-      className: 'custom-div-icon',
-      html: `<div style="position:relative;width:48px;height:48px;"><div class="marker-highlight"></div></div>`,
-      iconSize: [48, 48],
-      iconAnchor: [24, 48],
+    // Use L.circleMarker — always perfectly centered on coordinates
+    const circle = L.circleMarker([lat, lng], {
+      radius: 20,
+      color: '#10b981',
+      weight: 3,
+      opacity: 0.8,
+      fillColor: '#10b981',
+      fillOpacity: 0.15,
+      interactive: false,
     });
+    circle.addTo(highlightLayerRef.current);
 
-    const highlightMarkerObj = L.marker([lat, lng], { icon: highlightIcon, interactive: false, zIndexOffset: 2000 });
-    highlightMarkerObj.addTo(highlightLayerRef.current);
+    // Pulsate animation via radius changes
+    let pulseRadius = 20;
+    let growing = true;
+    const pulseInterval = setInterval(() => {
+      if (growing) {
+        pulseRadius += 1.5;
+        if (pulseRadius >= 35) growing = false;
+      } else {
+        pulseRadius -= 1.5;
+        if (pulseRadius <= 20) growing = true;
+      }
+      circle.setRadius(pulseRadius);
+      circle.setStyle({ opacity: 0.8 - (pulseRadius - 20) * 0.03, fillOpacity: 0.2 - (pulseRadius - 20) * 0.01 });
+    }, 40);
 
     // Auto-remove after 3 seconds
     highlightTimerRef.current = setTimeout(() => {
+      clearInterval(pulseInterval);
       highlightLayerRef.current?.clearLayers();
     }, 3000);
   }, []);
@@ -352,7 +379,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch(getApiUrl('pollution'), { signal: controller.signal })
+    apiFetch('pollution', { signal: controller.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return (await r.json()) as any;
@@ -393,13 +420,25 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
       mapRef.current = map;
 
-      // Default Layer: CartoDB Voyager
-      tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 20,
+      // Default Layer: OpenStreetMap (most reliable coverage)
+      tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
         keepBuffer: 4,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
       }).addTo(map);
+
+      // Tile error retry logic
+      tileLayerRef.current.on('tileerror', (e: any) => {
+        const tile = e.tile;
+        const src = tile.src;
+        const retryCount = (tile as any)._retryCount || 0;
+        if (retryCount < 2) {
+          (tile as any)._retryCount = retryCount + 1;
+          setTimeout(() => { tile.src = src; }, 1000);
+        }
+      });
 
       // Layers
       markerLayerRef.current = L.layerGroup().addTo(map);
@@ -607,8 +646,8 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       // Esri World Imagery
       tileLayerRef.current.setUrl('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
     } else {
-      // CartoDB Voyager
-      tileLayerRef.current.setUrl('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png');
+      // OpenStreetMap standard
+      tileLayerRef.current.setUrl('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
     }
   };
 
@@ -782,7 +821,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!tempMarkerPos || !user) return;
 
     try {
-      const res = await fetch(getApiUrl('pollution'), {
+      const res = await apiFetch('pollution', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -811,7 +850,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!confirm("Bạn có chắc chắn muốn xóa cảnh báo này không?")) return;
 
     try {
-      const res = await fetch(getApiUrl(`pollution/${id}`), {
+      const res = await apiFetch(`pollution/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok && res.status !== 204) {
@@ -931,8 +970,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
           {isFlying && (
             <div className="w-32 h-1 bg-slate-200 rounded-full overflow-hidden mb-1">
               <div
-                className="h-full bg-emerald-500 rounded-full fly-indicator-bar"
-                style={{ '--fly-duration': `${flyDuration}s` } as React.CSSProperties}
+                className={`h-full bg-emerald-500 rounded-full fly-indicator-bar ${FLY_DURATION_CLASS[flyDuration] ?? 'fly-duration-100'}`}
               />
             </div>
           )}

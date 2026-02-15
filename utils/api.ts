@@ -5,3 +5,10 @@ export function getApiUrl(endpoint: string): string {
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return `${API_BASE_URL}${path}`;
 }
+
+export function apiFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+    return fetch(getApiUrl(endpoint), {
+        ...init,
+        credentials: 'include',
+    });
+}

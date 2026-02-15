@@ -24,10 +24,11 @@ const AUTH_COOKIE = 'eco_token';
 function cookieOptions() {
     const env = getEnv();
     const isProd = env.NODE_ENV === 'production';
+    const sameSite: 'lax' | 'none' = isProd ? 'none' : 'lax';
     return {
         httpOnly: true,
         secure: isProd,
-        sameSite: 'lax' as const,
+        sameSite,
         path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000,
     };
@@ -38,7 +39,12 @@ function setAuthCookie(res: any, token: string) {
 }
 
 function clearAuthCookie(res: any) {
-    res.clearCookie(AUTH_COOKIE, { path: '/' });
+    const options = cookieOptions();
+    res.clearCookie(AUTH_COOKIE, {
+        path: options.path,
+        secure: options.secure,
+        sameSite: options.sameSite,
+    });
 }
 
 const SignupSchema = z.object({

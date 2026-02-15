@@ -16,6 +16,10 @@ import { postsRouter } from './routes/posts';
 import { eventsRouter } from './routes/events';
 import { pollutionRouter } from './routes/pollution';
 import { errorHandler, notFound } from './middleware/errors';
+import { prisma } from './prisma';
+import { cache } from './lib/cache';
+import { requestContext } from './middleware/requestContext';
+import { requestMetricsMiddleware } from './lib/metrics';
 
 dotenv.config();
 
@@ -25,6 +29,9 @@ const isProd = env.NODE_ENV === 'production';
 const app = express();
 
 app.disable('x-powered-by');
+if (isProd) {
+    app.set('trust proxy', 1);
+}
 
 // Compression middleware - reduce response size by 20-70%
 app.use(compression({
@@ -95,9 +102,16 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '1mb' }));
+app.use(requestContext);
+app.use(requestMetricsMiddleware);
 
 if (env.NODE_ENV !== 'test') {
-    app.use(morgan(isProd ? 'combined' : 'dev'));
+    morgan.token('request-id', (_req, res) => {
+        const responseWithLocals = res as typeof res & { locals?: { requestId?: string } };
+        return String(responseWithLocals.locals?.requestId || '-');
+    });
+    const logFormat = ':method :url :status :res[content-length] - :response-time ms req_id=:request-id';
+    app.use(morgan(logFormat));
 }
 
 // Baseline rate limit
@@ -155,10 +169,54 @@ if (isProd) {
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(env.PORT, '0.0.0.0', () => {
+const server = app.listen(env.PORT, '0.0.0.0', () => {
     // eslint-disable-next-line no-console
     console.log(`Backend listening on http://localhost:${env.PORT}`);
     if (isProd) {
         console.log('Running in PRODUCTION mode with enhanced security');
     }
+});
+
+let isShuttingDown = false;
+
+async function shutdown(signal: NodeJS.Signals) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    console.log(`${signal} received. Starting graceful shutdown...`);
+
+    const forceExitTimer = setTimeout(() => {
+        console.error('Graceful shutdown timed out. Forcing process exit.');
+        process.exit(1);
+    }, 15_000);
+
+    try {
+        await new Promise<void>((resolve, reject) => {
+            server.close((err) => {
+                if (err) return reject(err);
+                return resolve();
+            });
+        });
+
+        await Promise.allSettled([
+            prisma.$disconnect(),
+            cache.disconnect(),
+        ]);
+
+        clearTimeout(forceExitTimer);
+        console.log('Graceful shutdown completed.');
+        process.exit(0);
+    } catch (error) {
+        clearTimeout(forceExitTimer);
+        console.error('Error during graceful shutdown:', error);
+        process.exit(1);
+    }
+}
+
+process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+    void shutdown('SIGINT');
 });

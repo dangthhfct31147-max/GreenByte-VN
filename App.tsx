@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getApiUrl } from '@/utils/api';
+import { apiFetch } from '@/utils/api';
 import {
   Home,
   Map,
@@ -120,7 +120,7 @@ export default function App() {
 
     (async () => {
       try {
-        const res = await fetch(getApiUrl('auth/me'), {
+        const res = await apiFetch('auth/me', {
           signal: controller.signal,
           cache: 'no-store',
         });
@@ -152,7 +152,7 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(getApiUrl('cart'));
+      const res = await apiFetch('cart');
       const data = (await res.json()) as any;
       if (!res.ok) throw new Error(data?.error ?? 'Không tải được giỏ hàng');
       setCartItems(Array.isArray(data?.cart?.items) ? data.cart.items : []);
@@ -174,7 +174,7 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(getApiUrl('cart/items'), {
+      const res = await apiFetch('cart/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productId: product.id, quantity: 1 }),
@@ -200,7 +200,7 @@ export default function App() {
     if (!existing) return;
     const nextQty = Math.max(1, existing.quantity + delta);
 
-    const res = await fetch(getApiUrl(`cart/items/${productId}`), {
+    const res = await apiFetch(`cart/items/${productId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quantity: nextQty }),
@@ -214,13 +214,13 @@ export default function App() {
 
   const removeFromCart = async (productId: string) => {
     if (!user) return;
-    await fetch(getApiUrl(`cart/items/${productId}`), { method: 'DELETE' });
+    await apiFetch(`cart/items/${productId}`, { method: 'DELETE' });
     setCartItems((prev) => prev.filter((x) => x.product.id !== productId));
   };
 
   const handleLogout = async () => {
     try {
-      await fetch(getApiUrl('auth/logout'), { method: 'POST' });
+      await apiFetch('auth/logout', { method: 'POST' });
     } catch {
       // ignore
     }

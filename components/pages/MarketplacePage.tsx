@@ -13,7 +13,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'framer-motion';
-import { getApiUrl } from '@/utils/api';
+import { apiFetch } from '@/utils/api';
 import OptimizedImage from '../ui/OptimizedImage';
 import Pagination from '../ui/Pagination';
 import { useScrollDirection } from '@/utils/hooks';
@@ -65,7 +65,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
   useEffect(() => {
     const controller = new AbortController();
     setIsLoadingRemote(true);
-    fetch(getApiUrl('products'), { signal: controller.signal })
+    apiFetch('products', { signal: controller.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return (await r.json()) as { products: Product[] };
@@ -322,7 +322,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     setLoading(true);
 
     try {
-      const res = await fetch(getApiUrl('products'), {
+      const res = await apiFetch('products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

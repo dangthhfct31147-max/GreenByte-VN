@@ -1,19 +1,54 @@
 import { Router } from 'express';
 import { cache } from '../lib/cache';
+import { prisma } from '../prisma';
+import { getMetricsSnapshot } from '../lib/metrics';
 
 export const healthRouter = Router();
 
 healthRouter.get('/health', async (_req, res) => {
-    // Check Redis health (non-blocking for overall health unless critical)
-    const redisHealthy = await cache.checkRedisHealth(1000); // 1s timeout for health check
+    res.json({
+        status: 'ok',
+        type: 'liveness',
+        timestamp: new Date().toISOString(),
+        requestId: res.locals.requestId,
+        uptimeSeconds: Math.floor(process.uptime()),
+    });
+});
+
+healthRouter.get('/health/ready', async (_req, res) => {
+    let dbHealthy = false;
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        dbHealthy = true;
+    } catch {
+        dbHealthy = false;
+    }
+
+    const redisHealthy = await cache.checkRedisHealth(1000);
+    const ready = dbHealthy;
 
     const status = {
-        status: 'ok',
+        status: ready ? 'ready' : 'not_ready',
+        type: 'readiness',
         timestamp: new Date().toISOString(),
+        requestId: res.locals.requestId,
         services: {
+            database: dbHealthy ? 'healthy' : 'unhealthy',
             redis: redisHealthy ? 'healthy' : 'disconnected_or_not_configured',
         },
     };
 
-    res.json(status);
+    if (!ready) {
+        return res.status(503).json(status);
+    }
+
+    return res.json(status);
+});
+
+healthRouter.get('/metrics', (_req, res) => {
+    res.json({
+        timestamp: new Date().toISOString(),
+        requestId: res.locals.requestId,
+        ...getMetricsSnapshot(),
+    });
 });

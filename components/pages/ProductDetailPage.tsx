@@ -16,7 +16,7 @@ import {
     User
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getApiUrl } from '@/utils/api';
+import { apiFetch } from '@/utils/api';
 
 // Re-use Product type from MarketplacePage
 export interface Product {
@@ -62,7 +62,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         setLoading(true);
         setError(null);
 
-        fetch(getApiUrl(`products/${productId}`), { signal: controller.signal })
+        apiFetch(`products/${productId}`, { signal: controller.signal })
             .then(async (r) => {
                 if (!r.ok) throw new Error(`Không tìm thấy sản phẩm`);
                 return (await r.json()) as { product: Product };
@@ -70,7 +70,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             .then((data) => {
                 setProduct(data.product);
                 // Fetch related products after getting the main product
-                return fetch(getApiUrl(`products?category=${encodeURIComponent(data.product.category)}&limit=4`), { signal: controller.signal });
+                return apiFetch(`products?category=${encodeURIComponent(data.product.category)}&limit=4`, { signal: controller.signal });
             })
             .then(async (r) => {
                 if (r.ok) {
@@ -186,6 +186,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                                 {/* Wishlist Button */}
                                 <button
                                     onClick={() => setIsWishlisted(!isWishlisted)}
+                                    title={isWishlisted ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'}
+                                    aria-label={isWishlisted ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'}
                                     className={`absolute bottom-4 right-4 p-3 rounded-full shadow-lg transition-all ${isWishlisted
                                         ? 'bg-red-500 text-white'
                                         : 'bg-white/90 backdrop-blur text-slate-600 hover:text-red-500'
@@ -300,10 +302,18 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                                     <ShoppingCart size={20} />
                                     Thêm vào giỏ hàng
                                 </button>
-                                <button className="flex items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-medium hover:border-emerald-300 hover:bg-emerald-50 transition-all">
+                                <button
+                                    title="Nhắn tin cho người bán"
+                                    aria-label="Nhắn tin cho người bán"
+                                    className="flex items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-medium hover:border-emerald-300 hover:bg-emerald-50 transition-all"
+                                >
                                     <MessageCircle size={20} />
                                 </button>
-                                <button className="flex items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-medium hover:border-emerald-300 hover:bg-emerald-50 transition-all">
+                                <button
+                                    title="Chia sẻ sản phẩm"
+                                    aria-label="Chia sẻ sản phẩm"
+                                    className="flex items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-medium hover:border-emerald-300 hover:bg-emerald-50 transition-all"
+                                >
                                     <Share2 size={20} />
                                 </button>
                             </div>
