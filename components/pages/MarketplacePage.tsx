@@ -56,16 +56,31 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
   // Scroll Direction for Header
   const scrollDirection = useScrollDirection();
   const showHeader = scrollDirection !== 'down';
 
-  // Load from backend
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load from backend (server-side filtered)
   useEffect(() => {
     const controller = new AbortController();
     setIsLoadingRemote(true);
-    apiFetch('products', { signal: controller.signal })
+
+    const params = new URLSearchParams();
+    params.set('take', '24');
+    if (debouncedSearchQuery) params.set('search', debouncedSearchQuery);
+    if (selectedCategory !== 'Tất cả') params.set('category', selectedCategory);
+
+    apiFetch(`products?${params.toString()}`, { signal: controller.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return (await r.json()) as { products: Product[] };
@@ -73,21 +88,17 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
       .then((data) => {
         if (Array.isArray(data.products)) setProducts(data.products);
       })
-      .catch(() => {
-        setProducts([]);
+      .catch((err: any) => {
+        if (err?.name !== 'AbortError') {
+          setProducts([]);
+        }
       })
       .finally(() => setIsLoadingRemote(false));
 
     return () => controller.abort();
-  }, []);
+  }, [debouncedSearchQuery, selectedCategory]);
 
-  // Filter Logic
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.location.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'Tất cả' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredProducts = products;
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);

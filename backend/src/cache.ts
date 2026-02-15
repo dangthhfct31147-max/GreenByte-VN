@@ -20,6 +20,13 @@ setInterval(() => {
 let redisClient: import('ioredis').Redis | null = null;
 let redisInitialized = false;
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+    return Promise.race([
+        promise,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+}
+
 async function getRedis(): Promise<import('ioredis').Redis | null> {
     if (redisInitialized) return redisClient;
     redisInitialized = true;
@@ -56,7 +63,7 @@ export async function cacheGet(key: string): Promise<string | null> {
     try {
         const redis = await getRedis();
         if (redis) {
-            const value = await redis.get(key);
+            const value = await withTimeout(redis.get(key), 120);
             if (value) return value;
         }
     } catch {
@@ -83,7 +90,7 @@ export async function cacheSet(key: string, value: string, ttlSeconds: number): 
     try {
         const redis = await getRedis();
         if (redis) {
-            await redis.setex(key, ttlSeconds, value);
+            void withTimeout(redis.setex(key, ttlSeconds, value), 120);
         }
     } catch {
         // Ignore Redis errors
@@ -103,9 +110,9 @@ export async function cacheDelete(pattern: string): Promise<void> {
     try {
         const redis = await getRedis();
         if (redis) {
-            const keys = await redis.keys(pattern);
-            if (keys.length > 0) {
-                await redis.del(...keys);
+            const keys = await withTimeout(redis.keys(pattern), 120);
+            if (Array.isArray(keys) && keys.length > 0) {
+                void withTimeout(redis.del(...keys), 120);
             }
         }
     } catch {
@@ -115,8 +122,8 @@ export async function cacheDelete(pattern: string): Promise<void> {
 
 // Cache key generators
 export const CACHE_KEYS = {
-    productsList: (category?: string, search?: string) =>
-        `products:list:${category || 'all'}:${search || ''}`,
+    productsList: (category?: string, search?: string, take?: number) =>
+        `products:list:${category || 'all'}:${search || ''}:${take || 'default'}`,
     productById: (id: string) => `products:id:${id}`,
     productsInvalidate: 'products:',
 };

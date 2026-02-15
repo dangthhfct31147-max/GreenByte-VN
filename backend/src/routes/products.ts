@@ -34,7 +34,7 @@ productsRouter.get('/', async (req, res, next) => {
       .parse(req.query);
 
     // Try cache first
-    const cacheKey = CACHE_KEYS.productsList(query.category, query.search);
+    const cacheKey = CACHE_KEYS.productsList(query.category, query.search, query.take ?? 50);
     const cached = await cacheGet(cacheKey);
 
     if (cached) {
