@@ -1,14 +1,7 @@
 import { PrismaClient } from '@prisma/client';
-import { createHash, randomBytes } from 'crypto';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
-
-// Simple password hash for seed (not for production auth)
-function hashPassword(password: string): string {
-    const salt = randomBytes(16).toString('hex');
-    const hash = createHash('sha256').update(password + salt).digest('hex');
-    return `${salt}:${hash}`;
-}
 
 const SAMPLE_PRODUCTS = [
     {
@@ -137,11 +130,14 @@ async function main() {
     console.log('🌱 Bắt đầu seed database...');
 
     // Tạo user demo làm seller
-    const passwordHash = hashPassword('DemoPass123!');
+    const passwordHash = await bcrypt.hash('DemoPass123!', 12);
 
     const demoSeller = await prisma.user.upsert({
         where: { email: 'seller@eco-byproduct.vn' },
-        update: {},
+        update: {
+            name: 'Nông Dân Xanh',
+            passwordHash,
+        },
         create: {
             email: 'seller@eco-byproduct.vn',
             name: 'Nông Dân Xanh',

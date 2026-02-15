@@ -23,11 +23,13 @@ const AUTH_COOKIE = 'eco_token';
 
 function cookieOptions() {
     const env = getEnv();
-    const isProd = env.NODE_ENV === 'production';
-    const sameSite: 'lax' | 'none' = isProd ? 'none' : 'lax';
+    const frontendOrigin = new URL(env.FRONTEND_ORIGIN);
+    const isLocalhost = frontendOrigin.hostname === 'localhost' || frontendOrigin.hostname === '127.0.0.1';
+    const shouldUseSecureCookies = frontendOrigin.protocol === 'https:' && !isLocalhost;
+    const sameSite: 'lax' | 'none' = shouldUseSecureCookies ? 'none' : 'lax';
     return {
         httpOnly: true,
-        secure: isProd,
+        secure: shouldUseSecureCookies,
         sameSite,
         path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000,
