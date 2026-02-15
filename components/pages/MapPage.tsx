@@ -163,6 +163,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const poiLayerRef = useRef<L.LayerGroup | null>(null);
   const poiCacheRef = useRef<Map<string, POIItem[]>>(new Map());
   const poiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flyMoveEndHandlerRef = useRef<(() => void) | null>(null);
 
   const [markers, setMarkers] = useState<PollutionMarker[]>([]);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -297,8 +298,11 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     setIsFlying(true);
     setFlyDuration(duration);
 
-    // Remove any previous moveend listener
-    map.off('moveend');
+    // Remove only the previous custom fly handler (do not remove Leaflet internal listeners)
+    if (flyMoveEndHandlerRef.current) {
+      map.off('moveend', flyMoveEndHandlerRef.current);
+      flyMoveEndHandlerRef.current = null;
+    }
 
     if (dist > 50000 && arcZoom < currentZoom - 1) {
       // Two-phase flight: zoom out → fly → zoom in
@@ -326,7 +330,9 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
           setIsFlying(false);
           if (shouldHighlight) highlightMarker(lat, lng);
           map.off('moveend', onMoveEnd);
+          flyMoveEndHandlerRef.current = null;
         };
+        flyMoveEndHandlerRef.current = onMoveEnd;
         map.on('moveend', onMoveEnd);
       }, phase1Duration * 1000);
     } else {
@@ -341,7 +347,9 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
         setIsFlying(false);
         if (shouldHighlight) highlightMarker(lat, lng);
         map.off('moveend', onMoveEnd);
+        flyMoveEndHandlerRef.current = null;
       };
+      flyMoveEndHandlerRef.current = onMoveEnd;
       map.on('moveend', onMoveEnd);
     }
   }, [highlightMarker]);
