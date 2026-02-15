@@ -406,6 +406,113 @@ const UpdateMeSchema = z.object({
     name: z.string().min(1).max(100),
 });
 
+const PreferencesSchema = z.object({
+    notifications: z.object({
+        emailUpdates: z.boolean(),
+        marketplaceUpdates: z.boolean(),
+        pollutionAlerts: z.boolean(),
+        securityAlerts: z.boolean(),
+        weeklyDigest: z.boolean(),
+    }),
+    preferences: z.object({
+        language: z.enum(['vi', 'en']),
+        dateFormat: z.enum(['locale', 'iso']),
+        publicProfile: z.boolean(),
+        showLastLogin: z.boolean(),
+        defaultAnonymousReports: z.boolean(),
+        soundEffects: z.boolean(),
+        reducedMotion: z.boolean(),
+        mapAutoLocate: z.boolean(),
+    }),
+});
+
+function toPreferenceResponse(pref: any) {
+    return {
+        notifications: {
+            emailUpdates: pref.emailUpdates,
+            marketplaceUpdates: pref.marketplaceUpdates,
+            pollutionAlerts: pref.pollutionAlerts,
+            securityAlerts: pref.securityAlerts,
+            weeklyDigest: pref.weeklyDigest,
+        },
+        preferences: {
+            language: pref.language,
+            dateFormat: pref.dateFormat,
+            publicProfile: pref.publicProfile,
+            showLastLogin: pref.showLastLogin,
+            defaultAnonymousReports: pref.defaultAnonymousReports,
+            soundEffects: pref.soundEffects,
+            reducedMotion: pref.reducedMotion,
+            mapAutoLocate: pref.mapAutoLocate,
+        },
+        updatedAt: pref.updatedAt,
+    };
+}
+
+authRouter.get('/preferences', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const userId = req.user!.id;
+        const prismaAny = prisma as any;
+
+        const pref = await prismaAny.userPreference.upsert({
+            where: { userId },
+            create: { userId },
+            update: {},
+        });
+
+        res.json({ settings: toPreferenceResponse(pref) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+authRouter.patch('/preferences', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const userId = req.user!.id;
+        const body = PreferencesSchema.parse(req.body);
+        const prismaAny = prisma as any;
+
+        const pref = await prismaAny.userPreference.upsert({
+            where: { userId },
+            create: {
+                userId,
+                emailUpdates: body.notifications.emailUpdates,
+                marketplaceUpdates: body.notifications.marketplaceUpdates,
+                pollutionAlerts: body.notifications.pollutionAlerts,
+                securityAlerts: body.notifications.securityAlerts,
+                weeklyDigest: body.notifications.weeklyDigest,
+                language: body.preferences.language,
+                dateFormat: body.preferences.dateFormat,
+                publicProfile: body.preferences.publicProfile,
+                showLastLogin: body.preferences.showLastLogin,
+                defaultAnonymousReports: body.preferences.defaultAnonymousReports,
+                soundEffects: body.preferences.soundEffects,
+                reducedMotion: body.preferences.reducedMotion,
+                mapAutoLocate: body.preferences.mapAutoLocate,
+            },
+            update: {
+                emailUpdates: body.notifications.emailUpdates,
+                marketplaceUpdates: body.notifications.marketplaceUpdates,
+                pollutionAlerts: body.notifications.pollutionAlerts,
+                securityAlerts: body.notifications.securityAlerts,
+                weeklyDigest: body.notifications.weeklyDigest,
+                language: body.preferences.language,
+                dateFormat: body.preferences.dateFormat,
+                publicProfile: body.preferences.publicProfile,
+                showLastLogin: body.preferences.showLastLogin,
+                defaultAnonymousReports: body.preferences.defaultAnonymousReports,
+                soundEffects: body.preferences.soundEffects,
+                reducedMotion: body.preferences.reducedMotion,
+                mapAutoLocate: body.preferences.mapAutoLocate,
+            },
+        });
+
+        res.json({ settings: toPreferenceResponse(pref) });
+    } catch (err) {
+        next(err);
+    }
+});
+
 authRouter.patch('/me', requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
         const userId = req.user!.id;

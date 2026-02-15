@@ -1,8 +1,79 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
-import { Loader2, ShieldCheck, ShieldOff, Copy, Check, ArrowLeft, ChevronDown, User as UserIcon, KeyRound } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldOff, Copy, Check, ArrowLeft, ChevronDown, User as UserIcon, KeyRound, Bell, SlidersHorizontal } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
+
+type LocalProfileSettings = {
+    notifications: {
+        emailUpdates: boolean;
+        marketplaceUpdates: boolean;
+        pollutionAlerts: boolean;
+        securityAlerts: boolean;
+        weeklyDigest: boolean;
+    };
+    preferences: {
+        language: 'vi' | 'en';
+        dateFormat: 'locale' | 'iso';
+        publicProfile: boolean;
+        showLastLogin: boolean;
+        defaultAnonymousReports: boolean;
+        soundEffects: boolean;
+        reducedMotion: boolean;
+        mapAutoLocate: boolean;
+    };
+};
+
+const LOCAL_SETTINGS_KEY = 'eco_profile_settings_v1';
+
+const DEFAULT_LOCAL_SETTINGS: LocalProfileSettings = {
+    notifications: {
+        emailUpdates: true,
+        marketplaceUpdates: true,
+        pollutionAlerts: true,
+        securityAlerts: true,
+        weeklyDigest: false,
+    },
+    preferences: {
+        language: 'vi',
+        dateFormat: 'locale',
+        publicProfile: false,
+        showLastLogin: true,
+        defaultAnonymousReports: false,
+        soundEffects: true,
+        reducedMotion: false,
+        mapAutoLocate: true,
+    },
+};
+
+function loadLocalSettings(): LocalProfileSettings {
+    try {
+        const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+        if (!raw) return DEFAULT_LOCAL_SETTINGS;
+        const parsed = JSON.parse(raw) as Partial<LocalProfileSettings>;
+
+        return {
+            notifications: {
+                ...DEFAULT_LOCAL_SETTINGS.notifications,
+                ...(parsed.notifications || {}),
+            },
+            preferences: {
+                ...DEFAULT_LOCAL_SETTINGS.preferences,
+                ...(parsed.preferences || {}),
+            },
+        };
+    } catch {
+        return DEFAULT_LOCAL_SETTINGS;
+    }
+}
+
+function persistLocalSettingsBackup(settings: LocalProfileSettings) {
+    try {
+        localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+        // ignore localStorage errors
+    }
+}
 
 type TotpStatusResponse = {
     totpEnabled: boolean;
@@ -33,7 +104,7 @@ export const ProfilePage = ({
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
-    const [openSection, setOpenSection] = useState<'profile' | 'security'>('profile');
+    const [openSection, setOpenSection] = useState<'profile' | 'security' | 'notifications' | 'preferences'>('profile');
 
     const [profileLoading, setProfileLoading] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
@@ -54,6 +125,8 @@ export const ProfilePage = ({
     const [setup, setSetup] = useState<TotpSetupResponse | null>(null);
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
     const [code, setCode] = useState('');
+    const [localSettings, setLocalSettings] = useState<LocalProfileSettings>(DEFAULT_LOCAL_SETTINGS);
+    const [savingSettings, setSavingSettings] = useState(false);
 
     const jsonHeaders = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
 
@@ -63,7 +136,7 @@ export const ProfilePage = ({
         icon,
         children,
     }: {
-        id: 'profile' | 'security';
+        id: 'profile' | 'security' | 'notifications' | 'preferences';
         title: string;
         icon: React.ReactNode;
         children: React.ReactNode;
@@ -156,9 +229,31 @@ export const ProfilePage = ({
         return () => controller.abort();
     };
 
+    const loadServerSettings = async () => {
+        try {
+            const res = await apiFetch('auth/preferences', { cache: 'no-store' });
+            const data = (await res.json()) as any;
+            if (!res.ok) throw new Error(data?.error ?? 'Không tải được cài đặt hồ sơ');
+
+            const settings = data?.settings as LocalProfileSettings | undefined;
+            if (settings?.notifications && settings?.preferences) {
+                setLocalSettings(settings);
+                persistLocalSettingsBackup(settings);
+                return;
+            }
+
+            const fallback = loadLocalSettings();
+            setLocalSettings(fallback);
+        } catch {
+            const fallback = loadLocalSettings();
+            setLocalSettings(fallback);
+        }
+    };
+
     useEffect(() => {
         loadStatus();
         loadMe();
+        loadServerSettings();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -166,6 +261,64 @@ export const ProfilePage = ({
         setProfileName(user.name);
         setProfileEmail(user.email);
     }, [user.id, user.name, user.email]);
+
+    useEffect(() => {
+        setLocalSettings(loadLocalSettings());
+    }, []);
+
+    const saveLocalSettings = async () => {
+        setSavingSettings(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            const res = await apiFetch('auth/preferences', {
+                method: 'PATCH',
+                headers: jsonHeaders,
+                body: JSON.stringify(localSettings),
+            });
+            const data = (await res.json()) as any;
+            if (!res.ok) throw new Error(data?.error ?? 'Không thể lưu cài đặt hồ sơ');
+
+            const settings = data?.settings as LocalProfileSettings | undefined;
+            if (settings?.notifications && settings?.preferences) {
+                setLocalSettings(settings);
+                persistLocalSettingsBackup(settings);
+            } else {
+                persistLocalSettingsBackup(localSettings);
+            }
+
+            setSuccess('Đã đồng bộ cài đặt hồ sơ lên máy chủ.');
+        } catch (e: any) {
+            persistLocalSettingsBackup(localSettings);
+            setError(e?.message ?? 'Lưu server thất bại. Đã lưu tạm trên thiết bị hiện tại.');
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    const toggleNotification = (key: keyof LocalProfileSettings['notifications']) => {
+        setLocalSettings((prev) => ({
+            ...prev,
+            notifications: {
+                ...prev.notifications,
+                [key]: !prev.notifications[key],
+            },
+        }));
+    };
+
+    const togglePreference = (key: keyof LocalProfileSettings['preferences']) => {
+        const currentValue = localSettings.preferences[key];
+        if (typeof currentValue !== 'boolean') return;
+
+        setLocalSettings((prev) => ({
+            ...prev,
+            preferences: {
+                ...prev.preferences,
+                [key]: !Boolean(prev.preferences[key]),
+            },
+        }));
+    };
 
     const saveProfile = async () => {
         if (!profileName.trim()) {
@@ -590,6 +743,117 @@ export const ProfilePage = ({
                                 </div>
                             )}
                         </div>
+                    </AccordionItem>
+
+                    <AccordionItem id="notifications" title="Thông báo" icon={<Bell size={18} />}>
+                        <div className="space-y-3">
+                            {[
+                                { key: 'emailUpdates', label: 'Email cập nhật hệ thống', hint: 'Nhận thay đổi chính sách, bảo trì và thông báo dịch vụ.' },
+                                { key: 'marketplaceUpdates', label: 'Biến động sản phẩm quan tâm', hint: 'Thông báo khi có sản phẩm mới theo khu vực/danh mục bạn theo dõi.' },
+                                { key: 'pollutionAlerts', label: 'Cảnh báo ô nhiễm theo khu vực', hint: 'Ưu tiên các cảnh báo gần khu vực bạn thường xem trên bản đồ.' },
+                                { key: 'securityAlerts', label: 'Cảnh báo bảo mật', hint: 'Thông báo đăng nhập bất thường, thay đổi mật khẩu, TOTP.' },
+                                { key: 'weeklyDigest', label: 'Bản tin tổng hợp hàng tuần', hint: 'Tóm tắt hoạt động tài khoản, thị trường và báo cáo nổi bật.' },
+                            ].map((item) => {
+                                const checked = localSettings.notifications[item.key as keyof LocalProfileSettings['notifications']];
+                                return (
+                                    <div key={item.key} className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-start justify-between gap-4">
+                                        <div>
+                                            <div className="font-medium text-slate-900">{item.label}</div>
+                                            <div className="text-sm text-slate-500 mt-0.5">{item.hint}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleNotification(item.key as keyof LocalProfileSettings['notifications'])}
+                                            className={`relative w-11 h-6 rounded-full transition-colors ${checked ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                            title={item.label}
+                                        >
+                                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </AccordionItem>
+
+                    <AccordionItem id="preferences" title="Quyền riêng tư & trải nghiệm" icon={<SlidersHorizontal size={18} />}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label htmlFor="profile-language" className="block text-sm font-medium text-slate-700 mb-1">Ngôn ngữ giao diện</label>
+                                <select
+                                    id="profile-language"
+                                    value={localSettings.preferences.language}
+                                    onChange={(e) => {
+                                        const value = e.target.value === 'en' ? 'en' : 'vi';
+                                        setLocalSettings((prev) => ({
+                                            ...prev,
+                                            preferences: { ...prev.preferences, language: value },
+                                        }));
+                                    }}
+                                    title="Ngôn ngữ giao diện"
+                                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                >
+                                    <option value="vi">Tiếng Việt</option>
+                                    <option value="en">English</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="profile-date-format" className="block text-sm font-medium text-slate-700 mb-1">Định dạng thời gian</label>
+                                <select
+                                    id="profile-date-format"
+                                    value={localSettings.preferences.dateFormat}
+                                    onChange={(e) => {
+                                        const value = e.target.value === 'iso' ? 'iso' : 'locale';
+                                        setLocalSettings((prev) => ({
+                                            ...prev,
+                                            preferences: { ...prev.preferences, dateFormat: value },
+                                        }));
+                                    }}
+                                    title="Định dạng thời gian"
+                                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                >
+                                    <option value="locale">Theo thiết bị</option>
+                                    <option value="iso">ISO 8601</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 space-y-3">
+                            {[
+                                { key: 'publicProfile', label: 'Cho phép hiển thị hồ sơ công khai tối giản', hint: 'Hiển thị tên và thông tin cơ bản khi tương tác cộng đồng.' },
+                                { key: 'showLastLogin', label: 'Hiển thị lần đăng nhập gần nhất', hint: 'Hỗ trợ bạn theo dõi hoạt động tài khoản.' },
+                                { key: 'defaultAnonymousReports', label: 'Mặc định báo cáo ô nhiễm ở chế độ ẩn danh', hint: 'Tự động bật ẩn danh khi tạo báo cáo mới.' },
+                                { key: 'soundEffects', label: 'Âm thanh phản hồi thao tác', hint: 'Bật/tắt âm thanh xác nhận khi thao tác trong ứng dụng.' },
+                                { key: 'reducedMotion', label: 'Giảm chuyển động giao diện', hint: 'Giảm animation để thao tác êm hơn trên thiết bị yếu.' },
+                                { key: 'mapAutoLocate', label: 'Tự định vị khi mở bản đồ', hint: 'Tự lấy vị trí hiện tại để focus điểm gần bạn.' },
+                            ].map((item) => {
+                                const checked = localSettings.preferences[item.key as keyof LocalProfileSettings['preferences']] as boolean;
+                                return (
+                                    <div key={item.key} className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-start justify-between gap-4">
+                                        <div>
+                                            <div className="font-medium text-slate-900">{item.label}</div>
+                                            <div className="text-sm text-slate-500 mt-0.5">{item.hint}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => togglePreference(item.key as keyof LocalProfileSettings['preferences'])}
+                                            className={`relative w-11 h-6 rounded-full transition-colors ${checked ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                            title={item.label}
+                                        >
+                                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={saveLocalSettings}
+                            disabled={savingSettings}
+                            className="mt-5 w-full bg-slate-900 text-white py-2.5 rounded-lg font-medium hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {savingSettings ? <Loader2 className="animate-spin" size={20} /> : 'Lưu cài đặt cá nhân'}
+                        </button>
                     </AccordionItem>
 
                     {error && (

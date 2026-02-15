@@ -32,6 +32,7 @@ model User {
 
 	loginChallenges LoginChallenge[]
 	loginAttempts   LoginAttempt[]
+	preferences     UserPreference?
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -200,4 +201,30 @@ model LoginAttempt {
 	@@index([email])
 	@@index([ip])
 	@@index([createdAt])
+}
+
+model UserPreference {
+	id                  String  @id @default(uuid())
+	userId              String  @unique
+	user                User    @relation(fields: [userId], references: [id])
+
+	emailUpdates        Boolean @default(true)
+	marketplaceUpdates  Boolean @default(true)
+	pollutionAlerts     Boolean @default(true)
+	securityAlerts      Boolean @default(true)
+	weeklyDigest        Boolean @default(false)
+
+	language            String  @default("vi")
+	dateFormat          String  @default("locale")
+	publicProfile       Boolean @default(false)
+	showLastLogin       Boolean @default(true)
+	defaultAnonymousReports Boolean @default(false)
+	soundEffects        Boolean @default(true)
+	reducedMotion       Boolean @default(false)
+	mapAutoLocate       Boolean @default(true)
+
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+
+	@@index([updatedAt])
 }
