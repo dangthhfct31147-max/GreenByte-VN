@@ -74,7 +74,7 @@ authRouter.post('/signup', async (req, res, next) => {
         const token = jwt.sign({}, env.JWT_SECRET, { subject: user.id, expiresIn: '7d' });
         setAuthCookie(res, token);
 
-        res.status(201).json({ user });
+        res.status(201).json({ user, token });
     } catch (err: any) {
         // Handle Prisma unique constraint violation (P2002)
         if (err?.code === 'P2002') {
@@ -180,6 +180,7 @@ authRouter.post('/login', async (req, res, next) => {
             setAuthCookie(res, token);
             return res.json({
                 totpRequired: false,
+                token,
                 user: { id: user.id, email: user.email, name: user.name },
             });
         }
@@ -381,7 +382,7 @@ authRouter.post('/login/totp', async (req, res, next) => {
         const token = jwt.sign({}, env.JWT_SECRET, { subject: user.id, expiresIn: '7d' });
         setAuthCookie(res, token);
 
-        res.json({ user: { id: user.id, email: user.email, name: user.name } });
+        res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
     } catch (err) {
         next(err);
     }

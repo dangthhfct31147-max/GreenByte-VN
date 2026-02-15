@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Loader2, ShieldCheck, Timer, ArrowLeft } from 'lucide-react';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, setAuthToken } from '@/utils/api';
 
 type LoginStep1Response = {
     totpRequired: boolean;
+    token?: string;
     challengeId?: string;
     expiresAt?: string;
     user?: { id: string; email: string; name: string };
 };
 
 type VerifyResponse = {
+    token?: string;
     user: { id: string; email: string; name: string };
 };
 
@@ -66,6 +68,9 @@ export const LoginPage = ({
 
             const parsed = data as LoginStep1Response;
             if (!parsed.totpRequired && parsed.user) {
+                if (parsed.token) {
+                    setAuthToken(parsed.token);
+                }
                 onLoginSuccess({ user: parsed.user });
                 return;
             }
@@ -101,6 +106,9 @@ export const LoginPage = ({
             if (!res.ok) throw new Error(data?.error ?? 'Mã xác thực không hợp lệ');
 
             const parsed = data as VerifyResponse;
+            if (parsed.token) {
+                setAuthToken(parsed.token);
+            }
             onLoginSuccess({ user: parsed.user });
         } catch (e: any) {
             setError(e?.message ?? 'Có lỗi xảy ra');

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, clearAuthToken } from '@/utils/api';
 import {
   Home,
   Map,
@@ -224,6 +224,7 @@ export default function App() {
     } catch {
       // ignore
     }
+    clearAuthToken();
     setUser(null);
     setCartItems([]);
     navigate('home');

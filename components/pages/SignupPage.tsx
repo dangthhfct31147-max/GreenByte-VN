@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronRight, Loader2, ChevronDown, MapPin } from 'lucide-react';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, setAuthToken } from '@/utils/api';
 
 const PROVINCES = [
   'An Giang',
@@ -131,6 +131,10 @@ export const SignupPage = ({
 
       if (!data?.user) {
         throw new Error('Phản hồi từ máy chủ không hợp lệ. Vui lòng thử lại.');
+      }
+
+      if (typeof data?.token === 'string' && data.token) {
+        setAuthToken(data.token);
       }
 
       // Delegate storing session/token to App
