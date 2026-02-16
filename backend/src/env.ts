@@ -8,11 +8,6 @@ function normalizeOrigin(raw: unknown): string | undefined {
 
     value = value.replace(/^['"]|['"]$/g, '');
 
-    // If multiple origins are provided accidentally, use the first one.
-    if (value.includes(',')) {
-        value = value.split(',')[0].trim();
-    }
-
     if (!/^https?:\/\//i.test(value)) {
         const lower = value.toLowerCase();
         if (lower.startsWith('localhost') || lower.startsWith('127.0.0.1')) {
@@ -27,6 +22,14 @@ function normalizeOrigin(raw: unknown): string | undefined {
     } catch {
         return undefined;
     }
+}
+
+function normalizeOriginList(raw: unknown): string[] {
+    if (typeof raw !== 'string') return [];
+    return raw
+        .split(',')
+        .map((part) => normalizeOrigin(part))
+        .filter((origin): origin is string => Boolean(origin));
 }
 
 function resolveFrontendOrigin(): string {
@@ -57,6 +60,20 @@ const EnvSchema = z.object({
 });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+export function getAllowedOrigins(env?: Env): string[] {
+    const currentEnv = env ?? getEnv();
+    const fromAllowList = normalizeOriginList(process.env.CORS_ALLOWED_ORIGINS);
+    const fromAdminOrigin = normalizeOrigin(process.env.ADMIN_ORIGIN);
+
+    const merged = [
+        currentEnv.FRONTEND_ORIGIN,
+        ...fromAllowList,
+        ...(fromAdminOrigin ? [fromAdminOrigin] : []),
+    ];
+
+    return [...new Set(merged)];
+}
 
 export function getEnv(): Env {
     const parsed = EnvSchema.safeParse({

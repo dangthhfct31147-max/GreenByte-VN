@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 
-import { getEnv } from './env';
+import { getAllowedOrigins, getEnv } from './env';
 import { authRouter } from './routes/auth';
 import { productsRouter } from './routes/products';
 import { healthRouter } from './routes/health';
@@ -26,6 +26,7 @@ dotenv.config();
 
 const env = getEnv();
 const isProd = env.NODE_ENV === 'production';
+const allowedOrigins = new Set(getAllowedOrigins(env));
 
 const app = express();
 
@@ -60,7 +61,7 @@ app.use(
                 styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
                 fontSrc: ["'self'", "https://fonts.gstatic.com"],
                 imgSrc: ["'self'", "data:", "https:", "blob:"],
-                connectSrc: ["'self'", env.FRONTEND_ORIGIN],
+                connectSrc: ["'self'", ...allowedOrigins],
                 frameSrc: ["'none'"],
                 objectSrc: ["'none'"],
                 upgradeInsecureRequests: [],
@@ -82,7 +83,11 @@ app.use(
 
 app.use(
     cors({
-        origin: env.FRONTEND_ORIGIN,
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.has(origin)) return callback(null, true);
+            return callback(new Error('Not allowed by CORS'));
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
@@ -99,7 +104,7 @@ app.use((req, res, next) => {
     // Allow non-browser clients (no Origin header)
     if (!origin) return next();
 
-    if (origin !== env.FRONTEND_ORIGIN) {
+    if (!allowedOrigins.has(origin)) {
         return res.status(403).json({ error: 'Forbidden' });
     }
     return next();
