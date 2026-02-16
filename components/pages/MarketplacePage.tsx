@@ -160,6 +160,13 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
   }, [searchQuery, selectedCategory, minPrice, maxPrice, minQuality, maxDistanceKm, sortBy]);
 
   const requestBrowserLocation = () => {
+    const hostname = window.location.hostname;
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+    if (!window.isSecureContext && !isLocalHost) {
+      alert('Trình duyệt chỉ cho phép định vị trên HTTPS. Vui lòng mở website bằng https://');
+      return;
+    }
+
     if (!navigator.geolocation) {
       alert('Trình duyệt không hỗ trợ định vị');
       return;
@@ -171,8 +178,19 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
           lat: Number(position.coords.latitude.toFixed(6)),
           lng: Number(position.coords.longitude.toFixed(6)),
         });
+        setSortBy('distance_asc');
       },
-      () => alert('Không lấy được vị trí của bạn'),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          alert('Bạn đã chặn quyền vị trí. Hãy bật Location permission cho trang này rồi thử lại.');
+          return;
+        }
+        if (error.code === error.TIMEOUT) {
+          alert('Hết thời gian lấy vị trí. Vui lòng thử lại ở nơi có GPS/mạng ổn định hơn.');
+          return;
+        }
+        alert('Không lấy được vị trí của bạn. Vui lòng thử lại.');
+      },
       { enableHighAccuracy: true, timeout: 7000 }
     );
   };
