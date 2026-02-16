@@ -475,10 +475,7 @@ export const HomePage = ({
       {/* Call to Action */}
       <section className="py-20 bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 left-0 w-full h-full" style={{
-            backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 50%, white 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-          }} />
+          <div className="absolute top-0 left-0 w-full h-full home-cta-pattern" />
         </div>
 
         <div className="container mx-auto px-4 relative z-10">

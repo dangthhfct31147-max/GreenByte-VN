@@ -219,4 +219,9 @@
     .no-scrollbar::-webkit-scrollbar {
         display: none;
     }
+
+    .home-cta-pattern {
+        background-image: radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 50%, white 1px, transparent 1px);
+        background-size: 60px 60px;
+    }
 }
