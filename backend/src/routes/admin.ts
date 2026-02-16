@@ -178,7 +178,7 @@ adminRouter.post('/auth/login', async (req, res, next) => {
         }
 
         clearAdminLoginFailure(attemptKey);
-        const role = normalizeAdminRole(env.ADMIN_ROLE);
+        const role = normalizeAdminRole(process.env.ADMIN_ROLE ?? 'superadmin');
         const permissions = getAdminPermissions(role);
 
         const token = jwt.sign(

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BadgeCheck, MapPin, Star, Eye, MessageSquare, Handshake, TrendingUp, ShoppingBag } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
 
 type SellerOverview = {
@@ -86,6 +87,37 @@ export const SellerProfilePage: React.FC<SellerProfilePageProps> = ({ sellerId, 
         return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }, [data?.seller?.joined_at]);
 
+    const stats = useMemo(() => {
+        if (!data) return [];
+
+        return [
+            { key: 'listings', label: 'Tin đăng', value: data.overview.totalListings, icon: <ShoppingBag size={15} /> },
+            { key: 'rating', label: 'Điểm TB', value: data.overview.averageRating.toFixed(2), icon: <Star size={15} /> },
+            { key: 'reviews', label: 'Đánh giá', value: data.overview.totalReviews },
+            { key: 'views', label: 'Lượt xem', value: data.overview.totalViews, icon: <Eye size={15} /> },
+            { key: 'inquiries', label: 'Quan tâm', value: data.overview.totalInquiries, icon: <MessageSquare size={15} /> },
+            { key: 'deals', label: 'Deal', value: data.overview.totalAcceptedDeals, icon: <Handshake size={15} /> },
+            { key: 'interaction-rate', label: 'Tỷ lệ tương tác', value: `${data.overview.interactionRatePct}%` },
+            { key: 'conversion-rate', label: 'Chốt deal', value: `${data.overview.conversionRatePct}%`, icon: <TrendingUp size={15} /> },
+        ];
+    }, [data]);
+
+    const statsContainerVariants = {
+        hidden: { opacity: 0 },
+        visible: {
+            opacity: 1,
+            transition: {
+                staggerChildren: 0.06,
+                delayChildren: 0.08,
+            },
+        },
+    };
+
+    const statsItemVariants = {
+        hidden: { opacity: 0, y: 12 },
+        visible: { opacity: 1, y: 0, transition: { duration: 0.24, ease: 'easeOut' } },
+    };
+
     return (
         <div className="min-h-[calc(100vh-64px)] py-8 px-4">
             <div className="container mx-auto max-w-6xl space-y-6">
@@ -109,7 +141,12 @@ export const SellerProfilePage: React.FC<SellerProfilePageProps> = ({ sellerId, 
 
                 {!loading && !error && data && (
                     <>
-                        <section className="rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+                        <motion.section
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.28, ease: 'easeOut' }}
+                            className="max-w-5xl mx-auto rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm"
+                        >
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
                                 <div className="flex items-center gap-4">
                                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-xl font-bold">
@@ -129,42 +166,27 @@ export const SellerProfilePage: React.FC<SellerProfilePageProps> = ({ sellerId, 
                                     <div className="text-xl font-bold text-slate-900">{data.overview.rank ? `#${data.overview.rank}` : '—'}</div>
                                 </div>
                             </div>
-                        </section>
+                        </motion.section>
 
-                        <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><ShoppingBag size={14} />Tin đăng</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.totalListings}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><Star size={14} />Điểm TB</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.averageRating.toFixed(2)}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500">Đánh giá</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.totalReviews}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><Eye size={14} />Lượt xem</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.totalViews}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><MessageSquare size={14} />Quan tâm</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.totalInquiries}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><Handshake size={14} />Deal</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.totalAcceptedDeals}</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500">Tỷ lệ tương tác</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.interactionRatePct}%</div>
-                            </div>
-                            <div className="rounded-xl bg-white border border-slate-200 p-3">
-                                <div className="text-xs text-slate-500 flex items-center gap-1"><TrendingUp size={14} />Chốt deal</div>
-                                <div className="text-lg font-bold text-slate-900 mt-1">{data.overview.conversionRatePct}%</div>
-                            </div>
-                        </section>
+                        <motion.section
+                            variants={statsContainerVariants}
+                            initial="hidden"
+                            animate="visible"
+                            className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+                        >
+                            {stats.map((item) => (
+                                <motion.div
+                                    key={item.key}
+                                    variants={statsItemVariants}
+                                    whileHover={{ y: -3 }}
+                                    transition={{ duration: 0.16, ease: 'easeOut' }}
+                                    className="rounded-xl bg-white border border-slate-200 p-4"
+                                >
+                                    <div className="text-sm text-slate-500 flex items-center gap-1.5">{item.icon}{item.label}</div>
+                                    <div className="text-2xl font-bold text-slate-900 mt-1.5">{item.value}</div>
+                                </motion.div>
+                            ))}
+                        </motion.section>
 
                         <section className="rounded-3xl border border-slate-200 bg-white p-6">
                             <h2 className="text-lg font-semibold text-slate-900 mb-4">Tin đăng của seller</h2>
