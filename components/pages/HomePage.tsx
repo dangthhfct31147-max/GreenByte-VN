@@ -124,82 +124,6 @@ export const HomePage = ({
 }) => {
   const [recommendations, setRecommendations] = useState<RecommendationPayload | null>(null);
 
-  const withPopularFallback = async (payload: RecommendationPayload): Promise<RecommendationPayload> => {
-    const nextPayload: RecommendationPayload = {
-      ...payload,
-      products: [...payload.products],
-      discussions: [...payload.discussions],
-      events: [...payload.events],
-    };
-
-    const fallbackTasks: Promise<void>[] = [];
-
-    if (nextPayload.products.length === 0) {
-      fallbackTasks.push(
-        apiFetch('products?take=3&sort=quality_desc', { cache: 'no-store' })
-          .then(async (res) => {
-            if (!res.ok) return;
-            const data = (await res.json()) as { products?: Array<{ id: string; title: string; category: string; location: string; price: number }> };
-            if (!Array.isArray(data?.products) || data.products.length === 0) return;
-
-            nextPayload.products = data.products.slice(0, 3).map((item) => ({
-              id: item.id,
-              title: item.title,
-              category: item.category,
-              location: item.location,
-              price: item.price,
-              reason: 'Gợi ý phổ biến từ marketplace.',
-            }));
-          })
-          .catch(() => undefined)
-      );
-    }
-
-    if (nextPayload.discussions.length === 0) {
-      fallbackTasks.push(
-        apiFetch('posts?take=3', { cache: 'no-store' })
-          .then(async (res) => {
-            if (!res.ok) return;
-            const data = (await res.json()) as { posts?: Array<{ id: string; user_name: string; content: string; tags?: string[] }> };
-            if (!Array.isArray(data?.posts) || data.posts.length === 0) return;
-
-            nextPayload.discussions = data.posts.slice(0, 3).map((item) => ({
-              id: item.id,
-              user_name: item.user_name,
-              content: item.content,
-              tags: Array.isArray(item.tags) ? item.tags : [],
-              reason: 'Thảo luận phổ biến trong cộng đồng.',
-            }));
-          })
-          .catch(() => undefined)
-      );
-    }
-
-    if (nextPayload.events.length === 0) {
-      fallbackTasks.push(
-        apiFetch('events?take=3', { cache: 'no-store' })
-          .then(async (res) => {
-            if (!res.ok) return;
-            const data = (await res.json()) as { events?: Array<{ id: string; title: string; date: string; month: string; location: string }> };
-            if (!Array.isArray(data?.events) || data.events.length === 0) return;
-
-            nextPayload.events = data.events.slice(0, 3).map((item) => ({
-              id: item.id,
-              title: item.title,
-              location: item.location,
-              start_at: new Date().toISOString(),
-              display_date: `${item.date} ${item.month}`,
-              reason: 'Sự kiện cộng đồng đang được quan tâm.',
-            }));
-          })
-          .catch(() => undefined)
-      );
-    }
-
-    await Promise.all(fallbackTasks);
-    return nextPayload;
-  };
-
   useEffect(() => {
     if (!user) {
       setRecommendations(null);
@@ -214,9 +138,7 @@ export const HomePage = ({
       .then(async (res) => {
         const data = (await res.json()) as RecommendationPayload;
         if (!res.ok) throw new Error('Không tải được gợi ý cá nhân hóa');
-
-        const enriched = await withPopularFallback(data);
-        setRecommendations(enriched);
+        setRecommendations(data);
       })
       .catch((error: any) => {
         if (error?.name !== 'AbortError') {

@@ -343,19 +343,114 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
             .slice(0, takeEvents)
             .map((item: any) => item.data as EventRecommendation);
 
-        const basedOn = userId
+        let productsFinal = productsScored;
+        let discussionsFinal = discussionsScored;
+        let eventsFinal = eventsScored;
+
+        const [fallbackProductsRows, fallbackDiscussionRows, fallbackEventRows] = await Promise.all([
+            productsFinal.length === 0
+                ? (prisma as any).product.findMany({
+                    where: { deletedAt: null },
+                    take: takeProducts,
+                    orderBy: [{ qualityScore: 'desc' }, { createdAt: 'desc' }],
+                    select: {
+                        id: true,
+                        title: true,
+                        category: true,
+                        location: true,
+                        priceVnd: true,
+                        qualityScore: true,
+                        imageUrl: true,
+                    },
+                })
+                : Promise.resolve([]),
+            discussionsFinal.length === 0
+                ? (prisma as any).post.findMany({
+                    where: {
+                        deletedAt: null,
+                        moderationStatus: 'APPROVED',
+                    },
+                    take: takeDiscussions,
+                    orderBy: [{ likeCount: 'desc' }, { createdAt: 'desc' }],
+                    include: {
+                        author: { select: { name: true } },
+                        _count: { select: { comments: true } },
+                    },
+                })
+                : Promise.resolve([]),
+            eventsFinal.length === 0
+                ? (prisma as any).event.findMany({
+                    where: {
+                        deletedAt: null,
+                        moderationStatus: 'APPROVED',
+                    },
+                    take: takeEvents,
+                    orderBy: [{ startAt: 'asc' }, { createdAt: 'desc' }],
+                    include: {
+                        _count: { select: { rsvps: true } },
+                    },
+                })
+                : Promise.resolve([]),
+        ]);
+
+        if (productsFinal.length === 0 && fallbackProductsRows.length > 0) {
+            productsFinal = fallbackProductsRows.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                category: item.category,
+                location: item.location,
+                price: item.priceVnd,
+                quality_score: item.qualityScore,
+                image: item.imageUrl,
+                reason: 'Gợi ý phổ biến từ marketplace.',
+            })) as ProductRecommendation[];
+        }
+
+        if (discussionsFinal.length === 0 && fallbackDiscussionRows.length > 0) {
+            discussionsFinal = fallbackDiscussionRows.map((item: any) => ({
+                id: item.id,
+                user_name: item.author?.name ?? 'Thành viên',
+                content: item.content,
+                tags: parseTags(item.tags),
+                likes: Number(item.likeCount ?? 0),
+                comments: Number(item._count?.comments ?? 0),
+                reason: 'Thảo luận phổ biến trong cộng đồng.',
+            })) as DiscussionRecommendation[];
+        }
+
+        if (eventsFinal.length === 0 && fallbackEventRows.length > 0) {
+            eventsFinal = fallbackEventRows.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                start_at: new Date(item.startAt).toISOString(),
+                location: item.location,
+                attendees: Number(item._count?.rsvps ?? 0),
+                reason: 'Sự kiện cộng đồng đang được quan tâm.',
+            })) as EventRecommendation[];
+        }
+
+        const behaviorHints = userId
             ? [
                 ...topKeys(categoryScores, 3).map((category) => `Danh mục: ${category}`),
                 ...topKeys(tagScores, 3).map((tag) => `Chủ đề: ${tag}`),
             ]
-            : ['Xu hướng phổ biến toàn hệ thống'];
+            : [];
+        const usedFallback =
+            (productsScored.length === 0 && productsFinal.length > 0) ||
+            (discussionsScored.length === 0 && discussionsFinal.length > 0) ||
+            (eventsScored.length === 0 && eventsFinal.length > 0);
+
+        const basedOn = [
+            ...(behaviorHints.length > 0 ? behaviorHints : ['Xu hướng phổ biến toàn hệ thống']),
+            ...(usedFallback ? ['Bổ sung từ nội dung phổ biến'] : []),
+        ];
 
         return res.json({
             personalized: Boolean(userId),
             based_on: basedOn,
-            products: productsScored,
-            discussions: discussionsScored,
-            events: eventsScored,
+            products: productsFinal,
+            discussions: discussionsFinal,
+            events: eventsFinal,
         });
     } catch (err) {
         return next(err);
