@@ -19,9 +19,12 @@ import { MarketplacePage, Product } from './components/pages/MarketplacePage';
 import { CommunityPage } from './components/pages/CommunityPage';
 import { CartPage } from './components/pages/CartPage';
 import { ProductDetailPage } from './components/pages/ProductDetailPage';
+import { AdminLoginPage } from './components/pages/AdminLoginPage';
+import { AdminPage } from './components/pages/AdminPage';
+import { getAdminToken, setAdminToken } from '@/utils/adminAuth';
 
 // Types
-type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'product';
+type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'product' | 'admin-login' | 'admin';
 
 // URL path to Route mapping
 const pathToRoute: Record<string, Route> = {
@@ -35,6 +38,8 @@ const pathToRoute: Record<string, Route> = {
   '/cart': 'cart',
   '/profile': 'profile',
   '/product': 'product',
+  '/admin': 'admin',
+  '/admin/login': 'admin-login',
 };
 
 const routeToPath: Record<Route, string> = {
@@ -47,6 +52,8 @@ const routeToPath: Record<Route, string> = {
   cart: '/cart',
   profile: '/profile',
   product: '/product',
+  admin: '/admin',
+  'admin-login': '/admin/login',
 };
 
 function getRouteFromPath(): { route: Route; productId: string | null } {
@@ -82,6 +89,7 @@ export default function App() {
 
   // Product Detail State
   const [selectedProductId, setSelectedProductId] = useState<string | null>(initialState.productId);
+  const [adminUser, setAdminUser] = useState<{ email: string } | null>(null);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -231,11 +239,41 @@ export default function App() {
   };
 
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const isAdminRoute = currentRoute === 'admin' || currentRoute === 'admin-login';
+
+  useEffect(() => {
+    const token = getAdminToken();
+    if (!token) {
+      setAdminUser(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await apiFetch('admin/auth/me', {
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? 'Phiên admin không hợp lệ');
+        setAdminUser({ email: data?.admin?.email ?? 'admin' });
+      } catch {
+        setAdminToken(null);
+        setAdminUser(null);
+        if (currentRoute === 'admin') {
+          navigate('admin-login');
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [currentRoute]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Navigation */}
-      <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md">
+      {!isAdminRoute && <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('home')}>
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white">
@@ -350,7 +388,7 @@ export default function App() {
             )}
           </div>
         )}
-      </header>
+      </header>}
 
       {/* Main Content Area */}
       <main className="flex-1 bg-slate-50">
@@ -414,10 +452,42 @@ export default function App() {
         {currentRoute === 'profile' && !user && (
           <div className="p-10 text-center text-slate-500">Vui lòng đăng nhập để xem hồ sơ.</div>
         )}
+
+        {currentRoute === 'admin-login' && (
+          <AdminLoginPage
+            onLoginSuccess={(adminEmail) => {
+              setAdminUser({ email: adminEmail });
+              navigate('admin');
+            }}
+            onBackHome={() => navigate('home')}
+          />
+        )}
+
+        {currentRoute === 'admin' && adminUser && (
+          <AdminPage
+            adminEmail={adminUser.email}
+            onBackHome={() => navigate('home')}
+            onLogout={() => {
+              setAdminToken(null);
+              setAdminUser(null);
+              navigate('admin-login');
+            }}
+          />
+        )}
+
+        {currentRoute === 'admin' && !adminUser && (
+          <AdminLoginPage
+            onLoginSuccess={(adminEmail) => {
+              setAdminUser({ email: adminEmail });
+              navigate('admin');
+            }}
+            onBackHome={() => navigate('home')}
+          />
+        )}
       </main>
 
       {/* Footer */}
-      {currentRoute !== 'map' && (
+      {!isAdminRoute && currentRoute !== 'map' && (
         <footer className="bg-white border-t border-slate-200 py-12">
           <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>

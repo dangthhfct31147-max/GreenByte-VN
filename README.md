@@ -29,6 +29,30 @@ Sàn thương mại điện tử phụ phẩm nông nghiệp & Bản đồ ô nh
     npm run dev
     ```
 
+## 🔐 Admin Portal
+
+- URL: `/admin/login`
+- API prefix: `/api/admin/*`
+
+Set admin env vars in `.env`:
+
+```bash
+ADMIN_EMAIL=admin@eco-byproduct.vn
+ADMIN_PASSWORD=YourStrongPassword
+# Or use bcrypt hash instead:
+# ADMIN_PASSWORD_HASH=$2b$12$...
+ADMIN_JWT_SECRET=another_long_random_secret
+```
+
+### Admin Docker (Railway)
+
+Use `Dockerfile.admin` for an isolated admin frontend deployment:
+
+```bash
+docker build -f Dockerfile.admin --build-arg VITE_API_URL=https://your-api.example.com -t eco-admin .
+docker run -p 8080:8080 eco-admin
+```
+
 ## ⚡ Prisma Accelerate (Optional)
 
 After enabling Accelerate in https://console.prisma.io/, set:

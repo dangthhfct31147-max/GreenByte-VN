@@ -15,6 +15,7 @@ import { cartRouter } from './routes/cart';
 import { postsRouter } from './routes/posts';
 import { eventsRouter } from './routes/events';
 import { pollutionRouter } from './routes/pollution';
+import { adminRouter } from './routes/admin';
 import { errorHandler, notFound } from './middleware/errors';
 import { prisma } from './prisma';
 import { cache } from './lib/cache';
@@ -145,6 +146,7 @@ app.use('/api', cartRouter);
 app.use('/api', postsRouter);
 app.use('/api', eventsRouter);
 app.use('/api', pollutionRouter);
+app.use('/api/admin', adminRouter);
 
 // Serve static frontend in production
 if (isProd) {

@@ -1,0 +1,36 @@
+# =============================================================================
+# ADMIN FRONTEND DOCKERFILE (Railway optimized + hardened)
+# =============================================================================
+
+# ---------- Build stage ----------
+FROM public.ecr.aws/docker/library/node:20-alpine AS builder
+
+WORKDIR /app
+
+# Vite build-time API endpoint
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
+# Install dependencies with lockfile for reproducible builds
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy source and build
+COPY . .
+RUN npm run build
+
+# ---------- Runtime stage ----------
+# Unprivileged nginx image (runs as non-root by default)
+FROM public.ecr.aws/nginx/nginx-unprivileged:stable-alpine
+
+ENV PORT=8080
+
+# Security + SPA routing template
+COPY nginx.admin.conf /etc/nginx/templates/default.conf.template
+
+# Static files
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 8080
+
+# nginx-unprivileged image already starts nginx in foreground via entrypoint
