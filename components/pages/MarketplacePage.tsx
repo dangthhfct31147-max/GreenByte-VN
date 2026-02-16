@@ -52,6 +52,7 @@ interface SellerRanking {
 }
 
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
+const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=80';
 
 // --- Components ---
 
@@ -443,6 +444,7 @@ const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => s
         <OptimizedImage
           src={product.image}
           alt={product.title}
+          fallback={DEFAULT_PRODUCT_IMAGE}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           lazy={true}
         />

@@ -96,6 +96,8 @@ interface ProductDetailPageProps {
     onLoginRequest: () => void;
 }
 
+const DEFAULT_PRODUCT_IMAGE = 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=80';
+
 export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     productId,
     user,
@@ -368,7 +370,16 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4 }}>
                         <div className="rounded-3xl overflow-hidden bg-slate-100 border border-slate-200">
-                            <img src={product.image} alt={product.title} className="w-full h-full object-cover aspect-square" />
+                            <img
+                                src={product.image}
+                                alt={product.title}
+                                className="w-full h-full object-cover aspect-square"
+                                onError={(event) => {
+                                    const img = event.currentTarget;
+                                    img.onerror = null;
+                                    img.src = DEFAULT_PRODUCT_IMAGE;
+                                }}
+                            />
                         </div>
                     </motion.div>
 
