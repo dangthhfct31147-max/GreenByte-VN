@@ -101,7 +101,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
     if (minPrice.trim()) params.set('minPrice', minPrice.trim());
     if (maxPrice.trim()) params.set('maxPrice', maxPrice.trim());
     if (minQuality && minQuality !== '0') params.set('minQuality', minQuality);
-    if (maxDistanceKm.trim()) params.set('maxDistanceKm', maxDistanceKm.trim());
+    if (maxDistanceKm.trim() && maxDistanceKm !== 'over_50') params.set('maxDistanceKm', maxDistanceKm.trim());
     if (userLocation) {
       params.set('userLat', String(userLocation.lat));
       params.set('userLng', String(userLocation.lng));
@@ -143,7 +143,10 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
     return () => controller.abort();
   }, []);
 
-  const filteredProducts = products;
+  const filteredProducts =
+    maxDistanceKm === 'over_50' && userLocation
+      ? products.filter((product) => typeof product.distance_km === 'number' && product.distance_km > 50)
+      : products;
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
@@ -265,14 +268,19 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 <option value="4">Từ 4 sao</option>
                 <option value="5">5 sao</option>
               </AppSelect>
-              <input
-                type="number"
-                min={0}
-                placeholder="Khoảng cách"
+              <AppSelect
+                aria-label="Lọc khoảng cách"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
                 value={maxDistanceKm}
                 onChange={(e) => setMaxDistanceKm(e.target.value)}
-              />
+              >
+                <option value="">Khoảng cách</option>
+                <option value="5">Trong 5 km</option>
+                <option value="10">Trong 10 km</option>
+                <option value="20">Trong 20 km</option>
+                <option value="50">Trong 50 km</option>
+                <option value="over_50">Trên 50 km</option>
+              </AppSelect>
               <AppSelect
                 aria-label="Sắp xếp kết quả"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
