@@ -90,6 +90,8 @@ const FALLBACK_ACTIVE_MEMBERS = [
   'Đỗ Khánh Vy',
 ];
 
+const ACTIVE_MEMBERS_DISPLAY_LIMIT = 4;
+
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -613,19 +615,14 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
               Thành viên tích cực
             </h3>
             <div className="flex -space-x-2 overflow-hidden mb-4">
-              {activeMembers.slice(0, 5).map((member) => (
+              {activeMembers.slice(0, ACTIVE_MEMBERS_DISPLAY_LIMIT).map((member) => (
                 <div key={member.name} className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-bold" title={member.name}>
                   {member.initials}
                 </div>
               ))}
-              {activeMembers.length > 5 && (
-                <div className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-100 flex items-center justify-center text-xs text-slate-500 font-bold">
-                  +{activeMembers.length - 5}
-                </div>
-              )}
             </div>
             <div className="space-y-2">
-              {activeMembers.slice(0, 4).map((member) => (
+              {activeMembers.slice(0, ACTIVE_MEMBERS_DISPLAY_LIMIT).map((member) => (
                 <div key={`${member.name}-stat`} className="flex items-center justify-between text-xs">
                   <span className="text-slate-600">{member.name}</span>
                   <span className="text-slate-400">{member.posts > 0 ? `${member.posts} bài viết` : 'User mẫu'}</span>
