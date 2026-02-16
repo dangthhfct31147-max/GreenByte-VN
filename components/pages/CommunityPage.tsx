@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Heart,
   MessageCircle,
@@ -14,7 +14,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, getApiUrl } from '@/utils/api';
 
 // --- Types ---
 
@@ -36,7 +36,35 @@ interface Comment {
   user_name: string;
   content: string;
   timestamp: string;
+  created_at: string;
 }
+
+type CommentOrder = 'asc' | 'desc';
+
+interface TrendingTopic {
+  tag: string;
+  count: number;
+  label: string;
+}
+
+type CommunityStreamEvent =
+  | { type: 'connected'; at: string }
+  | { type: 'post_created'; postId: string; createdAt: string }
+  | {
+    type: 'comment_created';
+    postId: string;
+    commentCount: number;
+    comment: Comment;
+    createdAt: string;
+  }
+  | { type: 'like_changed'; postId: string; likeCount: number; createdAt: string };
+
+const DEFAULT_TRENDING_TOPICS: TrendingTopic[] = [
+  { tag: '#NongNghiepBenVung', count: 1200, label: '1.2k bài viết' },
+  { tag: '#TaiCheRomRa', count: 856, label: '856 bài viết' },
+  { tag: '#BienDoiKhiHau', count: 540, label: '540 bài viết' },
+  { tag: '#KhoiNghiepXanh', count: 320, label: '320 bài viết' },
+];
 
 interface Event {
   id: string;
@@ -80,12 +108,29 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
   const [newPostContent, setNewPostContent] = useState('');
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
+  const [commentOrderByPost, setCommentOrderByPost] = useState<Record<string, CommentOrder>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
   const [postingComment, setPostingComment] = useState<Record<string, boolean>>({});
   const [shareFeedback, setShareFeedback] = useState<Record<string, string>>({});
+  const [trendingTopics, setTrendingTopics] = useState<TrendingTopic[]>(DEFAULT_TRENDING_TOPICS);
+  const expandedCommentsRef = useRef<Record<string, boolean>>({});
+  const loadingCommentsRef = useRef<Record<string, boolean>>({});
+  const commentOrderByPostRef = useRef<Record<string, CommentOrder>>({});
 
   const jsonHeaders = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
+
+  useEffect(() => {
+    expandedCommentsRef.current = expandedComments;
+  }, [expandedComments]);
+
+  useEffect(() => {
+    loadingCommentsRef.current = loadingComments;
+  }, [loadingComments]);
+
+  useEffect(() => {
+    commentOrderByPostRef.current = commentOrderByPost;
+  }, [commentOrderByPost]);
 
   const activeMembers = useMemo(() => {
     const contributorCounter = new Map<string, number>();
@@ -111,24 +156,120 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
       }));
   }, [posts]);
 
+  const insertCommentByOrder = useCallback((items: Comment[], nextComment: Comment, order: CommentOrder): Comment[] => {
+    if (items.some((item) => item.id === nextComment.id)) return items;
+    if (items.length === 0) return [nextComment];
+
+    const nextTime = Date.parse(nextComment.created_at);
+    if (Number.isNaN(nextTime)) {
+      return order === 'desc' ? [nextComment, ...items] : [...items, nextComment];
+    }
+
+    const list = [...items];
+    let insertIndex = list.length;
+
+    for (let index = 0; index < list.length; index++) {
+      const currentTime = Date.parse(list[index].created_at);
+      if (Number.isNaN(currentTime)) continue;
+
+      if (order === 'asc') {
+        if (nextTime < currentTime) {
+          insertIndex = index;
+          break;
+        }
+      } else if (nextTime > currentTime) {
+        insertIndex = index;
+        break;
+      }
+    }
+
+    list.splice(insertIndex, 0, nextComment);
+    return list;
+  }, []);
+
+  const refreshPostsAndTopics = useCallback(async (signal?: AbortSignal) => {
+    const [postsResult, topicsResult] = await Promise.allSettled([
+      apiFetch('posts', { signal }).then(r => r.ok ? r.json() : Promise.reject()),
+      apiFetch('posts/trending-topics', { signal }).then(r => r.ok ? r.json() : Promise.reject()),
+    ]);
+
+    if (postsResult.status === 'fulfilled' && Array.isArray(postsResult.value?.posts)) {
+      setPosts(postsResult.value.posts);
+    }
+
+    if (topicsResult.status === 'fulfilled' && Array.isArray(topicsResult.value?.topics) && topicsResult.value.topics.length > 0) {
+      setTrendingTopics(topicsResult.value.topics as TrendingTopic[]);
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
 
-    Promise.all([
-      apiFetch('posts', { signal: controller.signal }).then(r => r.ok ? r.json() : Promise.reject()),
+    Promise.allSettled([
+      refreshPostsAndTopics(controller.signal),
       apiFetch('events', { signal: controller.signal }).then(r => r.ok ? r.json() : Promise.reject()),
-    ])
-      .then(([postsData, eventsData]) => {
-        if (Array.isArray(postsData?.posts)) setPosts(postsData.posts);
-        if (Array.isArray(eventsData?.events)) setEvents(eventsData.events);
-      })
-      .catch(() => {
-        setPosts([]);
+    ]).then(([, eventsResult]) => {
+      if (eventsResult.status === 'fulfilled' && Array.isArray(eventsResult.value?.events)) {
+        setEvents(eventsResult.value.events);
+      } else {
         setEvents([]);
-      });
+      }
+    });
 
     return () => controller.abort();
-  }, [user?.id]);
+  }, [refreshPostsAndTopics, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+
+    const stream = new EventSource(getApiUrl('posts/stream'), { withCredentials: true });
+
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as CommunityStreamEvent;
+
+        if (payload.type === 'post_created') {
+          void refreshPostsAndTopics();
+          return;
+        }
+
+        if (payload.type === 'comment_created') {
+          setPosts((prev) => prev.map((post) =>
+            post.id === payload.postId ? { ...post, comments: payload.commentCount } : post
+          ));
+
+          if (expandedCommentsRef.current[payload.postId]) {
+            setCommentsByPost((prev) => {
+              const current = prev[payload.postId];
+              if (!current) return prev;
+              const order = commentOrderByPostRef.current[payload.postId] ?? 'asc';
+              return {
+                ...prev,
+                [payload.postId]: insertCommentByOrder(current, payload.comment, order),
+              };
+            });
+          }
+          return;
+        }
+
+        if (payload.type === 'like_changed') {
+          setPosts((prev) => prev.map((post) =>
+            post.id === payload.postId ? { ...post, likes: payload.likeCount } : post
+          ));
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+
+    stream.onerror = () => {
+      // EventSource automatically reconnects
+    };
+
+    return () => {
+      stream.close();
+    };
+  }, [insertCommentByOrder, refreshPostsAndTopics]);
 
   // Actions
   const handleLike = (id: string) => {
@@ -181,22 +322,24 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
     }
   };
 
-  const loadComments = async (postId: string) => {
-    if (loadingComments[postId]) return;
+  const loadComments = useCallback(async (postId: string) => {
+    if (loadingCommentsRef.current[postId]) return;
     setLoadingComments((prev) => ({ ...prev, [postId]: true }));
     try {
       const res = await apiFetch(`posts/${postId}/comments`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Không thể tải bình luận');
       const comments = Array.isArray(data?.comments) ? data.comments as Comment[] : [];
+      const order: CommentOrder = data?.order === 'desc' ? 'desc' : 'asc';
       setCommentsByPost((prev) => ({ ...prev, [postId]: comments }));
+      setCommentOrderByPost((prev) => ({ ...prev, [postId]: order }));
       setPosts((prev) => prev.map((post) => post.id === postId ? { ...post, comments: comments.length } : post));
     } catch {
       setCommentsByPost((prev) => ({ ...prev, [postId]: [] }));
     } finally {
       setLoadingComments((prev) => ({ ...prev, [postId]: false }));
     }
-  };
+  }, []);
 
   const handleToggleComments = (postId: string) => {
     const willExpand = !expandedComments[postId];
@@ -230,7 +373,8 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
 
       setCommentsByPost((prev) => {
         const current = prev[postId] ?? [];
-        return { ...prev, [postId]: [...current, newComment] };
+        const order = commentOrderByPostRef.current[postId] ?? 'asc';
+        return { ...prev, [postId]: insertCommentByOrder(current, newComment, order) };
       });
       setPosts((prev) => prev.map((post) => post.id === postId ? { ...post, comments: post.comments + 1 } : post));
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
@@ -393,15 +537,10 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
               Chủ đề nổi bật
             </h3>
             <div className="space-y-3">
-              {[
-                { tag: '#NongNghiepBenVung', count: '1.2k bài viết' },
-                { tag: '#TaiCheRomRa', count: '856 bài viết' },
-                { tag: '#BienDoiKhiHau', count: '540 bài viết' },
-                { tag: '#KhoiNghiepXanh', count: '320 bài viết' },
-              ].map((topic, i) => (
-                <div key={i} className="flex items-center justify-between group cursor-pointer">
+              {trendingTopics.map((topic) => (
+                <div key={topic.tag} className="flex items-center justify-between group cursor-pointer">
                   <span className="text-slate-600 font-medium group-hover:text-emerald-600 transition-colors">{topic.tag}</span>
-                  <span className="text-xs text-slate-400">{topic.count}</span>
+                  <span className="text-xs text-slate-400">{topic.label}</span>
                 </div>
               ))}
             </div>

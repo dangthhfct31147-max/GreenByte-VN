@@ -38,6 +38,9 @@ app.use(compression({
     level: 6, // balanced speed/compression
     threshold: 1024, // only compress responses > 1KB
     filter: (req, res) => {
+        if (req.path === '/api/posts/stream') {
+            return false;
+        }
         if (req.headers['x-no-compression']) {
             return false;
         }
