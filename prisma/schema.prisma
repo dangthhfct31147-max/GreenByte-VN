@@ -36,6 +36,12 @@ model User {
 	sellerVerified Boolean @default(false)
 
 	products Product[]
+	writtenReviews ProductReview[] @relation("ReviewerReviews")
+	receivedReviews ProductReview[] @relation("SellerReviews")
+	buyerInquiries ProductInquiry[] @relation("BuyerInquiries")
+	sellerInquiries ProductInquiry[] @relation("SellerInquiries")
+	inquiryMessages ProductInquiryMessage[]
+	productViews ProductViewEvent[]
 	posts    Post[]
 	postComments PostComment[]
 	cart     Cart?
@@ -72,9 +78,12 @@ model Product {
 	id           String   @id @default(uuid())
 	title        String
 	priceVnd     Int
+	qualityScore Int      @default(3)
 	unit         String
 	category     String
 	location     String
+	latitude     Float?
+	longitude    Float?
 	imageUrl     String
 	description  String?
 	co2SavingsKg Int
@@ -83,6 +92,9 @@ model Product {
 	seller   User     @relation(fields: [sellerId], references: [id])
 
 	cartItems CartItem[]
+	reviews ProductReview[]
+	inquiries ProductInquiry[]
+	views ProductViewEvent[]
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -93,7 +105,90 @@ model Product {
 	@@index([createdAt])
 	@@index([title])
 	@@index([location])
+	@@index([priceVnd])
+	@@index([qualityScore])
 	@@index([deletedAt])
+}
+
+enum InquiryStatus {
+	OPEN
+	ACCEPTED
+	REJECTED
+	CLOSED
+}
+
+model ProductReview {
+	id                    String   @id @default(uuid())
+	productId             String
+	reviewerId            String
+	sellerId              String
+	rating                Int
+	content               String
+	isVerifiedInteraction Boolean  @default(false)
+
+	product  Product @relation(fields: [productId], references: [id])
+	reviewer User    @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+	seller   User    @relation("SellerReviews", fields: [sellerId], references: [id])
+
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+
+	@@unique([productId, reviewerId])
+	@@index([productId, createdAt])
+	@@index([sellerId, createdAt])
+}
+
+model ProductInquiry {
+	id             String       @id @default(uuid())
+	productId      String
+	buyerId        String
+	sellerId       String
+	status         InquiryStatus @default(OPEN)
+	latestOfferVnd Int?
+	lastMessageAt  DateTime     @default(now())
+
+	product Product @relation(fields: [productId], references: [id])
+	buyer   User    @relation("BuyerInquiries", fields: [buyerId], references: [id])
+	seller  User    @relation("SellerInquiries", fields: [sellerId], references: [id])
+	messages ProductInquiryMessage[]
+
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+
+	@@index([productId, createdAt])
+	@@index([buyerId, createdAt])
+	@@index([sellerId, createdAt])
+	@@index([status])
+}
+
+model ProductInquiryMessage {
+	id              String  @id @default(uuid())
+	inquiryId       String
+	senderId        String
+	message         String
+	proposedPriceVnd Int?
+
+	inquiry ProductInquiry @relation(fields: [inquiryId], references: [id])
+	sender  User           @relation(fields: [senderId], references: [id])
+
+	createdAt DateTime @default(now())
+
+	@@index([inquiryId, createdAt])
+	@@index([senderId, createdAt])
+}
+
+model ProductViewEvent {
+	id        String  @id @default(uuid())
+	productId String
+	viewerId  String?
+
+	product Product @relation(fields: [productId], references: [id])
+	viewer  User?   @relation(fields: [viewerId], references: [id])
+
+	viewedAt DateTime @default(now())
+
+	@@index([productId, viewedAt])
+	@@index([viewerId, viewedAt])
 }
 
 model Cart {

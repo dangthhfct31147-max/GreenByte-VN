@@ -6,10 +6,10 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import type { Router } from 'express';
 
 import { getAllowedOrigins, getEnv } from './env';
 import { authRouter } from './routes/auth';
-import { productsRouter } from './routes/products';
 import { healthRouter } from './routes/health';
 import { cartRouter } from './routes/cart';
 import { postsRouter } from './routes/posts';
@@ -21,6 +21,8 @@ import { prisma } from './prisma';
 import { cache } from './lib/cache';
 import { requestContext } from './middleware/requestContext';
 import { requestMetricsMiddleware } from './lib/metrics';
+
+const { productsRouter } = require('./routes/products') as { productsRouter: Router };
 
 dotenv.config();
 

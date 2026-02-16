@@ -45,7 +45,7 @@ interface DashboardData {
     futureModules: string[];
 }
 
-const TABS: Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+const TABS: Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ size?: number | string }> }> = [
     { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { id: 'analytics', label: 'Vận hành (P3)', icon: Activity },
     { id: 'users', label: 'Người dùng', icon: Users },

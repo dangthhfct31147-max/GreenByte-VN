@@ -4,15 +4,15 @@ import {
   Filter,
   Plus,
   MapPin,
-  Tag,
   ShoppingCart,
   Leaf,
+  Star,
   X,
   Image as ImageIcon,
   Loader2,
   Check
 } from 'lucide-react';
-import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
 import OptimizedImage from '../ui/OptimizedImage';
 import Pagination from '../ui/Pagination';
@@ -24,15 +24,31 @@ export interface Product {
   id: string;
   title: string;
   price: number;
+  quality_score?: number;
   unit: string;
   category: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
   image: string;
+  seller_id?: string;
   seller_name: string;
+  seller_rating_avg?: number;
+  seller_review_count?: number;
   seller_avatar?: string;
   co2_savings_kg: number;
   description?: string;
   posted_at: string;
+}
+
+interface SellerRanking {
+  rank: number;
+  seller_id: string;
+  seller_name: string;
+  average_rating: number;
+  total_reviews: number;
+  verified: boolean;
 }
 
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
@@ -48,8 +64,15 @@ interface MarketplacePageProps {
 
 export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginRequest, addToCart, onViewProduct }) => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [sellerRankings, setSellerRankings] = useState<SellerRanking[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Tất cả');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [minQuality, setMinQuality] = useState('0');
+  const [maxDistanceKm, setMaxDistanceKm] = useState('');
+  const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'quality_desc' | 'distance_asc'>('newest');
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
 
@@ -79,6 +102,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
     params.set('take', '24');
     if (debouncedSearchQuery) params.set('search', debouncedSearchQuery);
     if (selectedCategory !== 'Tất cả') params.set('category', selectedCategory);
+    if (minPrice.trim()) params.set('minPrice', minPrice.trim());
+    if (maxPrice.trim()) params.set('maxPrice', maxPrice.trim());
+    if (minQuality && minQuality !== '0') params.set('minQuality', minQuality);
+    if (maxDistanceKm.trim()) params.set('maxDistanceKm', maxDistanceKm.trim());
+    if (userLocation) {
+      params.set('userLat', String(userLocation.lat));
+      params.set('userLng', String(userLocation.lng));
+    }
+    params.set('sort', sortBy);
 
     apiFetch(`products?${params.toString()}`, { signal: controller.signal })
       .then(async (r) => {
@@ -96,7 +128,24 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
       .finally(() => setIsLoadingRemote(false));
 
     return () => controller.abort();
-  }, [debouncedSearchQuery, selectedCategory]);
+  }, [debouncedSearchQuery, selectedCategory, minPrice, maxPrice, minQuality, maxDistanceKm, userLocation, sortBy]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch('products/sellers/rankings?take=5', { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Không tải được xếp hạng');
+        return (await r.json()) as { rankings: SellerRanking[] };
+      })
+      .then((data) => {
+        if (Array.isArray(data.rankings)) {
+          setSellerRankings(data.rankings);
+        }
+      })
+      .catch(() => setSellerRankings([]));
+
+    return () => controller.abort();
+  }, []);
 
   const filteredProducts = products;
 
@@ -109,7 +158,25 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, minPrice, maxPrice, minQuality, maxDistanceKm, sortBy]);
+
+  const requestBrowserLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Trình duyệt không hỗ trợ định vị');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: Number(position.coords.latitude.toFixed(6)),
+          lng: Number(position.coords.longitude.toFixed(6)),
+        });
+      },
+      () => alert('Không lấy được vị trí của bạn'),
+      { enableHighAccuracy: true, timeout: 7000 }
+    );
+  };
 
   const handleCreateListing = (newProduct: Product) => {
     setProducts([newProduct, ...products]);
@@ -173,6 +240,69 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
               </button>
             ))}
           </div>
+
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-3 md:p-4">
+            <div className="flex items-center gap-2 text-slate-700 mb-3">
+              <Filter size={16} />
+              <span className="text-sm font-semibold">Tìm kiếm nâng cao</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              <input
+                type="number"
+                min={0}
+                placeholder="Giá từ"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+              />
+              <input
+                type="number"
+                min={0}
+                placeholder="Giá đến"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+              />
+              <select
+                aria-label="Lọc chất lượng tối thiểu"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={minQuality}
+                onChange={(e) => setMinQuality(e.target.value)}
+              >
+                <option value="0">Chất lượng bất kỳ</option>
+                <option value="3">Từ 3 sao</option>
+                <option value="4">Từ 4 sao</option>
+                <option value="5">5 sao</option>
+              </select>
+              <input
+                type="number"
+                min={0}
+                placeholder="Khoảng cách (km)"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={maxDistanceKm}
+                onChange={(e) => setMaxDistanceKm(e.target.value)}
+              />
+              <select
+                aria-label="Sắp xếp kết quả"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              >
+                <option value="newest">Mới nhất</option>
+                <option value="price_asc">Giá tăng dần</option>
+                <option value="price_desc">Giá giảm dần</option>
+                <option value="quality_desc">Chất lượng cao nhất</option>
+                <option value="distance_asc">Gần tôi nhất</option>
+              </select>
+              <button
+                type="button"
+                onClick={requestBrowserLocation}
+                className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:border-emerald-300 hover:text-emerald-600 transition-colors"
+              >
+                Dùng vị trí của tôi
+              </button>
+            </div>
+          </div>
         </div>
       </motion.div>
 
@@ -180,7 +310,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
       <div className="container mx-auto px-4 py-8">
 
         {/* Results Info */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-800">
             {selectedCategory === 'Tất cả' ? 'Tin đăng mới nhất' : selectedCategory}
           </h2>
@@ -188,6 +318,25 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
             {isLoadingRemote ? 'Đang tải...' : `Tìm thấy ${filteredProducts.length} kết quả`}
           </span>
         </div>
+
+        {sellerRankings.length > 0 && (
+          <div className="mb-6 bg-white border border-slate-200 rounded-2xl p-4">
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">Xếp hạng người bán</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+              {sellerRankings.map((seller) => (
+                <div key={seller.seller_id} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+                  <div className="text-xs text-slate-500">Hạng #{seller.rank}</div>
+                  <div className="text-sm font-semibold text-slate-900 truncate">{seller.seller_name}</div>
+                  <div className="mt-1 flex items-center gap-1 text-amber-500 text-sm">
+                    <Star size={14} fill="currentColor" />
+                    <span className="font-medium">{seller.average_rating.toFixed(1)}</span>
+                    <span className="text-slate-500">({seller.total_reviews})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Grid */}
         {filteredProducts.length > 0 ? (
@@ -220,7 +369,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
             <h3 className="text-lg font-medium text-slate-900">Không tìm thấy kết quả</h3>
             <p className="text-slate-500 max-w-xs mx-auto mt-2">Thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác.</p>
             <button
-              onClick={() => { setSearchQuery(''); setSelectedCategory('Tất cả'); }}
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedCategory('Tất cả');
+                setMinPrice('');
+                setMaxPrice('');
+                setMinQuality('0');
+                setMaxDistanceKm('');
+                setSortBy('newest');
+              }}
               className="mt-6 text-emerald-600 font-medium hover:underline"
             >
               Xóa bộ lọc
@@ -284,6 +441,21 @@ const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => s
           <span className="truncate">{product.location}</span>
         </div>
 
+        <div className="flex items-center justify-between text-xs mb-3">
+          <div className="flex items-center gap-1 text-amber-500">
+            <Star size={12} fill="currentColor" />
+            <span className="font-medium">{(product.seller_rating_avg ?? 0).toFixed(1)}</span>
+            <span className="text-slate-500">({product.seller_review_count ?? 0})</span>
+          </div>
+          <div className="text-slate-500">
+            Chất lượng: <span className="font-medium text-slate-700">{product.quality_score ?? 3}/5</span>
+          </div>
+        </div>
+
+        {typeof product.distance_km === 'number' && (
+          <div className="text-xs text-slate-500 mb-3">Khoảng cách: ~{product.distance_km} km</div>
+        )}
+
         <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-slate-200 overflow-hidden">
@@ -316,9 +488,12 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   const [formData, setFormData] = useState({
     title: '',
     price: '',
+    quality_score: '3',
     unit: 'kg',
     category: 'Rơm rạ',
     location: 'Hồ Chí Minh',
+    latitude: '',
+    longitude: '',
     image: 'https://images.unsplash.com/photo-1595835018335-508b5252834b?q=80&w=600&auto=format&fit=crop',
     co2_savings_kg: '10',
     description: ''
@@ -339,9 +514,12 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
         body: JSON.stringify({
           title: formData.title,
           price: Number(formData.price),
+          quality_score: Number(formData.quality_score),
           unit: formData.unit,
           category: formData.category,
           location: formData.location,
+          latitude: formData.latitude ? Number(formData.latitude) : undefined,
+          longitude: formData.longitude ? Number(formData.longitude) : undefined,
           image: formData.image,
           co2_savings_kg: Number(formData.co2_savings_kg),
           description: formData.description || undefined,
@@ -354,9 +532,12 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       setFormData({
         title: '',
         price: '',
+        quality_score: '3',
         unit: 'kg',
         category: 'Rơm rạ',
         location: 'Hồ Chí Minh',
+        latitude: '',
+        longitude: '',
         image: 'https://images.unsplash.com/photo-1595835018335-508b5252834b?q=80&w=600&auto=format&fit=crop',
         co2_savings_kg: '10',
         description: '',
@@ -445,6 +626,24 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                   />
                 </div>
                 <div>
+                  <label htmlFor="product-quality" className="block text-sm font-medium text-slate-700 mb-1">Chất lượng (1-5)</label>
+                  <select
+                    id="product-quality"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                    value={formData.quality_score}
+                    onChange={e => setFormData({ ...formData, quality_score: e.target.value })}
+                  >
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label htmlFor="product-unit" className="block text-sm font-medium text-slate-700 mb-1">Đơn vị tính</label>
                   <select
                     id="product-unit"
@@ -457,6 +656,33 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     <option value="bao">bao</option>
                     <option value="khối">khối</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="product-lat" className="block text-sm font-medium text-slate-700 mb-1">Vĩ độ (tuỳ chọn)</label>
+                  <input
+                    id="product-lat"
+                    type="number"
+                    step="0.000001"
+                    placeholder="10.8231"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2"
+                    value={formData.latitude}
+                    onChange={e => setFormData({ ...formData, latitude: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="product-lng" className="block text-sm font-medium text-slate-700 mb-1">Kinh độ (tuỳ chọn)</label>
+                  <input
+                    id="product-lng"
+                    type="number"
+                    step="0.000001"
+                    placeholder="106.6297"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2"
+                    value={formData.longitude}
+                    onChange={e => setFormData({ ...formData, longitude: e.target.value })}
+                  />
                 </div>
               </div>
 

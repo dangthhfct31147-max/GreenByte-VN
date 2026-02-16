@@ -251,6 +251,20 @@ async function main() {
 
     if (oldSellerProducts.length > 0) {
         const oldSellerProductIds = oldSellerProducts.map((p) => p.id);
+        const oldInquiryIds = await (prisma as any).productInquiry.findMany({
+            where: { productId: { in: oldSellerProductIds } },
+            select: { id: true },
+        });
+
+        if (oldInquiryIds.length > 0) {
+            await (prisma as any).productInquiryMessage.deleteMany({
+                where: { inquiryId: { in: oldInquiryIds.map((i: { id: string }) => i.id) } },
+            });
+        }
+
+        await (prisma as any).productReview.deleteMany({ where: { productId: { in: oldSellerProductIds } } });
+        await (prisma as any).productViewEvent.deleteMany({ where: { productId: { in: oldSellerProductIds } } });
+        await (prisma as any).productInquiry.deleteMany({ where: { productId: { in: oldSellerProductIds } } });
         await prisma.cartItem.deleteMany({
             where: { productId: { in: oldSellerProductIds } },
         });
@@ -259,11 +273,33 @@ async function main() {
         });
     }
 
+    const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
+        'Cần Thơ': { lat: 10.0452, lng: 105.7469 },
+        'An Giang': { lat: 10.5216, lng: 105.1259 },
+        'Đồng Nai': { lat: 11.0686, lng: 107.1676 },
+        'Bến Tre': { lat: 10.2433, lng: 106.3756 },
+        'Đắk Lắk': { lat: 12.7100, lng: 108.2378 },
+        'Tây Ninh': { lat: 11.3352, lng: 106.1099 },
+        'Bình Dương': { lat: 11.3254, lng: 106.4770 },
+        'Bình Phước': { lat: 11.7512, lng: 106.7235 },
+        'Long An': { lat: 10.6956, lng: 106.2431 },
+        'Thái Bình': { lat: 20.4463, lng: 106.3365 },
+        'Nghệ An': { lat: 19.2342, lng: 104.9200 },
+        'Hồ Chí Minh': { lat: 10.8231, lng: 106.6297 },
+    };
+
     // Tạo sản phẩm mẫu
     for (const product of SAMPLE_PRODUCTS) {
-        await prisma.product.create({
+        const city = CITY_COORDINATES[product.location] ?? { lat: 10.8231, lng: 106.6297 };
+        const lat = city.lat + (Math.random() - 0.5) * 0.12;
+        const lng = city.lng + (Math.random() - 0.5) * 0.12;
+
+        await (prisma.product as any).create({
             data: {
                 ...product,
+                qualityScore: Math.floor(Math.random() * 3) + 3,
+                latitude: lat,
+                longitude: lng,
                 sellerId: demoSeller.id,
             },
         });
@@ -306,6 +342,7 @@ async function main() {
     if (oldPosts.length > 0) {
         const oldPostIds = oldPosts.map((p) => p.id);
         await prisma.postLike.deleteMany({ where: { postId: { in: oldPostIds } } });
+        await (prisma as any).postComment.deleteMany({ where: { postId: { in: oldPostIds } } });
         await prisma.post.deleteMany({ where: { id: { in: oldPostIds } } });
     }
 
