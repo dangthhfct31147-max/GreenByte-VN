@@ -108,6 +108,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
   const [posts, setPosts] = useState<Post[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [newPostContent, setNewPostContent] = useState('');
+  const [newPostImageUrl, setNewPostImageUrl] = useState('');
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
   const [commentOrderByPost, setCommentOrderByPost] = useState<Record<string, CommentOrder>>({});
@@ -313,15 +314,48 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
       const res = await apiFetch('posts', {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify({ content: newPostContent, tags: [] }),
+        body: JSON.stringify({
+          content: newPostContent,
+          image: newPostImageUrl || undefined,
+          tags: [],
+        }),
       });
       const data = (await res.json()) as any;
       if (!res.ok) throw new Error(data?.error ?? 'Đăng bài thất bại');
       setPosts([data.post as Post, ...posts]);
       setNewPostContent('');
+      setNewPostImageUrl('');
     } catch (e: any) {
       alert(e?.message ?? 'Có lỗi xảy ra');
     }
+  };
+
+  const handleAddImage = () => {
+    const rawValue = window.prompt('Dán URL ảnh cho bài viết (https://...)', newPostImageUrl);
+    if (rawValue === null) return;
+
+    const imageUrl = rawValue.trim();
+    if (!imageUrl) {
+      setNewPostImageUrl('');
+      return;
+    }
+
+    try {
+      new URL(imageUrl);
+      setNewPostImageUrl(imageUrl);
+    } catch {
+      alert('URL ảnh không hợp lệ');
+    }
+  };
+
+  const handleAddEventTemplate = () => {
+    const today = new Date().toLocaleDateString('vi-VN');
+    const template = `📅 Sự kiện/Workshop (${today}): `;
+
+    setNewPostContent((prev) => {
+      if (prev.includes('📅 Sự kiện/Workshop')) return prev;
+      return `${prev}${prev.trim() ? '\n\n' : ''}${template}`;
+    });
   };
 
   const loadComments = useCallback(async (postId: string) => {
@@ -461,12 +495,37 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
                     onChange={(e) => setNewPostContent(e.target.value)}
                     disabled={!user}
                   />
+                  {newPostImageUrl && (
+                    <div className="mt-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                      <img src={newPostImageUrl} alt="Ảnh xem trước" className="w-full max-h-64 object-cover" loading="lazy" />
+                      <div className="flex items-center justify-between px-3 py-2 text-xs text-slate-500">
+                        <span className="truncate">Đã đính kèm ảnh</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewPostImageUrl('')}
+                          className="text-slate-500 hover:text-red-500 transition-colors"
+                        >
+                          Gỡ ảnh
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex gap-2">
-                      <button className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors" title="Thêm ảnh">
+                      <button
+                        onClick={handleAddImage}
+                        className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors"
+                        title="Thêm ảnh"
+                        type="button"
+                      >
                         <ImageIcon size={20} />
                       </button>
-                      <button className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors" title="Thêm sự kiện">
+                      <button
+                        onClick={handleAddEventTemplate}
+                        className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors"
+                        title="Thêm sự kiện"
+                        type="button"
+                      >
                         <Calendar size={20} />
                       </button>
                     </div>
