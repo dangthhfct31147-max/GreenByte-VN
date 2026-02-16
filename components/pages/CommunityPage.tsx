@@ -66,6 +66,8 @@ const DEFAULT_TRENDING_TOPICS: TrendingTopic[] = [
   { tag: '#KhoiNghiepXanh', count: 320, label: '320 bài viết' },
 ];
 
+const TRENDING_TOPICS_LIMIT = 4;
+
 interface Event {
   id: string;
   title: string;
@@ -190,7 +192,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
   const refreshPostsAndTopics = useCallback(async (signal?: AbortSignal) => {
     const [postsResult, topicsResult] = await Promise.allSettled([
       apiFetch('posts', { signal }).then(r => r.ok ? r.json() : Promise.reject()),
-      apiFetch('posts/trending-topics', { signal }).then(r => r.ok ? r.json() : Promise.reject()),
+      apiFetch(`posts/trending-topics?take=${TRENDING_TOPICS_LIMIT}`, { signal }).then(r => r.ok ? r.json() : Promise.reject()),
     ]);
 
     if (postsResult.status === 'fulfilled' && Array.isArray(postsResult.value?.posts)) {
@@ -198,7 +200,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
     }
 
     if (topicsResult.status === 'fulfilled' && Array.isArray(topicsResult.value?.topics) && topicsResult.value.topics.length > 0) {
-      setTrendingTopics(topicsResult.value.topics as TrendingTopic[]);
+      setTrendingTopics((topicsResult.value.topics as TrendingTopic[]).slice(0, TRENDING_TOPICS_LIMIT));
     }
   }, []);
 
@@ -537,7 +539,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
               Chủ đề nổi bật
             </h3>
             <div className="space-y-3">
-              {trendingTopics.map((topic) => (
+              {trendingTopics.slice(0, TRENDING_TOPICS_LIMIT).map((topic) => (
                 <div key={topic.tag} className="flex items-center justify-between group cursor-pointer">
                   <span className="text-slate-600 font-medium group-hover:text-emerald-600 transition-colors">{topic.tag}</span>
                   <span className="text-xs text-slate-400">{topic.label}</span>
