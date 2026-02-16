@@ -103,6 +103,7 @@ type RecommendationEvent = {
   title: string;
   location: string;
   start_at: string;
+  display_date?: string;
   reason: string;
 };
 
@@ -123,6 +124,82 @@ export const HomePage = ({
 }) => {
   const [recommendations, setRecommendations] = useState<RecommendationPayload | null>(null);
 
+  const withPopularFallback = async (payload: RecommendationPayload): Promise<RecommendationPayload> => {
+    const nextPayload: RecommendationPayload = {
+      ...payload,
+      products: [...payload.products],
+      discussions: [...payload.discussions],
+      events: [...payload.events],
+    };
+
+    const fallbackTasks: Promise<void>[] = [];
+
+    if (nextPayload.products.length === 0) {
+      fallbackTasks.push(
+        apiFetch('products?take=3&sort=quality_desc', { cache: 'no-store' })
+          .then(async (res) => {
+            if (!res.ok) return;
+            const data = (await res.json()) as { products?: Array<{ id: string; title: string; category: string; location: string; price: number }> };
+            if (!Array.isArray(data?.products) || data.products.length === 0) return;
+
+            nextPayload.products = data.products.slice(0, 3).map((item) => ({
+              id: item.id,
+              title: item.title,
+              category: item.category,
+              location: item.location,
+              price: item.price,
+              reason: 'Gợi ý phổ biến từ marketplace.',
+            }));
+          })
+          .catch(() => undefined)
+      );
+    }
+
+    if (nextPayload.discussions.length === 0) {
+      fallbackTasks.push(
+        apiFetch('posts?take=3', { cache: 'no-store' })
+          .then(async (res) => {
+            if (!res.ok) return;
+            const data = (await res.json()) as { posts?: Array<{ id: string; user_name: string; content: string; tags?: string[] }> };
+            if (!Array.isArray(data?.posts) || data.posts.length === 0) return;
+
+            nextPayload.discussions = data.posts.slice(0, 3).map((item) => ({
+              id: item.id,
+              user_name: item.user_name,
+              content: item.content,
+              tags: Array.isArray(item.tags) ? item.tags : [],
+              reason: 'Thảo luận phổ biến trong cộng đồng.',
+            }));
+          })
+          .catch(() => undefined)
+      );
+    }
+
+    if (nextPayload.events.length === 0) {
+      fallbackTasks.push(
+        apiFetch('events?take=3', { cache: 'no-store' })
+          .then(async (res) => {
+            if (!res.ok) return;
+            const data = (await res.json()) as { events?: Array<{ id: string; title: string; date: string; month: string; location: string }> };
+            if (!Array.isArray(data?.events) || data.events.length === 0) return;
+
+            nextPayload.events = data.events.slice(0, 3).map((item) => ({
+              id: item.id,
+              title: item.title,
+              location: item.location,
+              start_at: new Date().toISOString(),
+              display_date: `${item.date} ${item.month}`,
+              reason: 'Sự kiện cộng đồng đang được quan tâm.',
+            }));
+          })
+          .catch(() => undefined)
+      );
+    }
+
+    await Promise.all(fallbackTasks);
+    return nextPayload;
+  };
+
   useEffect(() => {
     if (!user) {
       setRecommendations(null);
@@ -137,7 +214,9 @@ export const HomePage = ({
       .then(async (res) => {
         const data = (await res.json()) as RecommendationPayload;
         if (!res.ok) throw new Error('Không tải được gợi ý cá nhân hóa');
-        setRecommendations(data);
+
+        const enriched = await withPopularFallback(data);
+        setRecommendations(enriched);
       })
       .catch((error: any) => {
         if (error?.name !== 'AbortError') {
@@ -397,55 +476,73 @@ export const HomePage = ({
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="font-semibold text-slate-900 mb-3">Sản phẩm gợi ý</div>
                 <div className="space-y-3">
-                  {recommendations.products.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('product', item.id)}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
-                      <div className="text-xs text-slate-500 mt-1">{item.location} • {item.category}</div>
-                      <div className="text-sm font-semibold text-emerald-700 mt-1">{formatPrice(item.price)}</div>
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
+                  {recommendations.products.length > 0 ? (
+                    recommendations.products.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onNavigate('product', item.id)}
+                        className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                      >
+                        <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
+                        <div className="text-xs text-slate-500 mt-1">{item.location} • {item.category}</div>
+                        <div className="text-sm font-semibold text-emerald-700 mt-1">{formatPrice(item.price)}</div>
+                        <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl bg-white border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+                      Chưa có sản phẩm phù hợp lúc này. Hãy tương tác thêm để hệ thống gợi ý tốt hơn.
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="font-semibold text-slate-900 mb-3">Thảo luận nên đọc</div>
                 <div className="space-y-3">
-                  {recommendations.discussions.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('community')}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="text-xs text-slate-500">{item.user_name}</div>
-                      <div className="text-sm text-slate-900 mt-1 line-clamp-2">{item.content}</div>
-                      {item.tags.length > 0 && (
-                        <div className="text-xs text-emerald-700 mt-1 line-clamp-1">{item.tags.slice(0, 2).join(' • ')}</div>
-                      )}
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
+                  {recommendations.discussions.length > 0 ? (
+                    recommendations.discussions.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onNavigate('community')}
+                        className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                      >
+                        <div className="text-xs text-slate-500">{item.user_name}</div>
+                        <div className="text-sm text-slate-900 mt-1 line-clamp-2">{item.content}</div>
+                        {item.tags.length > 0 && (
+                          <div className="text-xs text-emerald-700 mt-1 line-clamp-1">{item.tags.slice(0, 2).join(' • ')}</div>
+                        )}
+                        <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl bg-white border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+                      Chưa có thảo luận nổi bật lúc này. Vào cộng đồng để xem các chủ đề mới nhất.
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="font-semibold text-slate-900 mb-3">Sự kiện/Workshop phù hợp</div>
                 <div className="space-y-3">
-                  {recommendations.events.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('community')}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
-                      <div className="text-xs text-slate-500 mt-1">{new Date(item.start_at).toLocaleDateString('vi-VN')} • {item.location}</div>
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
+                  {recommendations.events.length > 0 ? (
+                    recommendations.events.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onNavigate('community')}
+                        className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                      >
+                        <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
+                        <div className="text-xs text-slate-500 mt-1">{item.display_date ?? new Date(item.start_at).toLocaleDateString('vi-VN')} • {item.location}</div>
+                        <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl bg-white border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+                      Chưa có sự kiện phù hợp lúc này. Hãy quay lại sau để xem workshop mới.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
