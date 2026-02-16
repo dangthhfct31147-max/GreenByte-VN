@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { AppSelect } from '../ui/AppSelect';
 import QRCode from 'qrcode';
 import { Loader2, ShieldCheck, ShieldOff, Copy, Check, ArrowLeft, ChevronDown, User as UserIcon, KeyRound, Bell, SlidersHorizontal } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
@@ -779,7 +780,7 @@ export const ProfilePage = ({
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="profile-language" className="block text-sm font-medium text-slate-700 mb-1">Ngôn ngữ giao diện</label>
-                                <select
+                                <AppSelect
                                     id="profile-language"
                                     value={localSettings.preferences.language}
                                     onChange={(e) => {
@@ -794,11 +795,11 @@ export const ProfilePage = ({
                                 >
                                     <option value="vi">Tiếng Việt</option>
                                     <option value="en">English</option>
-                                </select>
+                                </AppSelect>
                             </div>
                             <div>
                                 <label htmlFor="profile-date-format" className="block text-sm font-medium text-slate-700 mb-1">Định dạng thời gian</label>
-                                <select
+                                <AppSelect
                                     id="profile-date-format"
                                     value={localSettings.preferences.dateFormat}
                                     onChange={(e) => {
@@ -813,7 +814,7 @@ export const ProfilePage = ({
                                 >
                                     <option value="locale">Theo thiết bị</option>
                                     <option value="iso">ISO 8601</option>
-                                </select>
+                                </AppSelect>
                             </div>
                         </div>
 

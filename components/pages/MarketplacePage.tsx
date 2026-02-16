@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
 import OptimizedImage from '../ui/OptimizedImage';
 import Pagination from '../ui/Pagination';
+import { AppSelect } from '../ui/AppSelect';
 
 // --- Types ---
 
@@ -253,7 +254,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
               />
-              <select
+              <AppSelect
                 aria-label="Lọc chất lượng tối thiểu"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
                 value={minQuality}
@@ -263,7 +264,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 <option value="3">Từ 3 sao</option>
                 <option value="4">Từ 4 sao</option>
                 <option value="5">5 sao</option>
-              </select>
+              </AppSelect>
               <input
                 type="number"
                 min={0}
@@ -272,7 +273,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 value={maxDistanceKm}
                 onChange={(e) => setMaxDistanceKm(e.target.value)}
               />
-              <select
+              <AppSelect
                 aria-label="Sắp xếp kết quả"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
                 value={sortBy}
@@ -283,7 +284,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 <option value="price_desc">Giá giảm dần</option>
                 <option value="quality_desc">Chất lượng cao nhất</option>
                 <option value="distance_asc">Gần tôi nhất</option>
-              </select>
+              </AppSelect>
               <button
                 type="button"
                 onClick={requestBrowserLocation}
@@ -617,7 +618,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                 </div>
                 <div>
                   <label htmlFor="product-quality" className="block text-sm font-medium text-slate-700 mb-1">Chất lượng (1-5)</label>
-                  <select
+                  <AppSelect
                     id="product-quality"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
                     value={formData.quality_score}
@@ -628,14 +629,14 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     <option value="3">3</option>
                     <option value="4">4</option>
                     <option value="5">5</option>
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="product-unit" className="block text-sm font-medium text-slate-700 mb-1">Đơn vị tính</label>
-                  <select
+                  <AppSelect
                     id="product-unit"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
                     value={formData.unit}
@@ -645,7 +646,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     <option value="tấn">tấn</option>
                     <option value="bao">bao</option>
                     <option value="khối">khối</option>
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
 
@@ -679,7 +680,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="product-category" className="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
-                  <select
+                  <AppSelect
                     id="product-category"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
                     value={formData.category}
@@ -688,7 +689,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     {CATEGORIES.filter(c => c !== 'Tất cả').map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </div>
                 <div>
                   <label htmlFor="product-location" className="block text-sm font-medium text-slate-700 mb-1">Khu vực</label>

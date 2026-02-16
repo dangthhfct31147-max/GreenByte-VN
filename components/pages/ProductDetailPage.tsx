@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
+import { AppSelect } from '../ui/AppSelect';
 
 export interface Product {
     id: string;
@@ -497,18 +498,19 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                         {user && !isSellerView && (
                             <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
                                 <div className="grid grid-cols-4 gap-2">
-                                    <select
+                                    <AppSelect
                                         aria-label="Chọn số sao đánh giá"
                                         value={reviewRating}
                                         onChange={(e) => setReviewRating(e.target.value)}
                                         className="col-span-1 border border-slate-200 rounded-lg px-2 py-2 text-sm"
+                                        wrapperClassName="col-span-1"
                                     >
                                         <option value="5">5★</option>
                                         <option value="4">4★</option>
                                         <option value="3">3★</option>
                                         <option value="2">2★</option>
                                         <option value="1">1★</option>
-                                    </select>
+                                    </AppSelect>
                                     <input
                                         value={reviewContent}
                                         onChange={(e) => setReviewContent(e.target.value)}
