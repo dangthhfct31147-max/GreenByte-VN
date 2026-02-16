@@ -1,7 +1,33 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+function getSchemaFromUrl(url: string): string | undefined {
+    try {
+        return new URL(url).searchParams.get('schema') ?? undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function createPrismaClient() {
+    const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
+    if (!url) {
+        throw new Error('DATABASE_URL (hoặc DIRECT_DATABASE_URL) chưa được cấu hình.');
+    }
+
+    if (url.startsWith('prisma://')) {
+        throw new Error('Seed yêu cầu URL kết nối trực tiếp. Vui lòng cấu hình DIRECT_DATABASE_URL.');
+    }
+
+    const adapter = new PrismaPg(
+        { connectionString: url },
+        { schema: getSchemaFromUrl(url) }
+    );
+    return new PrismaClient({ adapter });
+}
+
+const prisma = createPrismaClient();
 
 const SAMPLE_PRODUCTS = [
     {
