@@ -237,12 +237,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
               <Filter size={16} />
               <span className="text-sm font-semibold">Tìm kiếm nâng cao</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
               <input
                 type="number"
                 min={0}
                 placeholder="Giá từ"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white lg:col-span-2"
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
               />
@@ -250,13 +250,14 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 type="number"
                 min={0}
                 placeholder="Giá đến"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white lg:col-span-2"
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
               />
               <AppSelect
                 aria-label="Lọc chất lượng tối thiểu"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                wrapperClassName="lg:col-span-3"
                 value={minQuality}
                 onChange={(e) => setMinQuality(e.target.value)}
               >
@@ -269,13 +270,14 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 type="number"
                 min={0}
                 placeholder="Khoảng cách (km)"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white lg:col-span-2"
                 value={maxDistanceKm}
                 onChange={(e) => setMaxDistanceKm(e.target.value)}
               />
               <AppSelect
                 aria-label="Sắp xếp kết quả"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                wrapperClassName="lg:col-span-2"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               >
@@ -288,7 +290,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
               <button
                 type="button"
                 onClick={requestBrowserLocation}
-                className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:border-emerald-300 hover:text-emerald-600 transition-colors"
+                className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:border-emerald-300 hover:text-emerald-600 transition-colors lg:col-span-1"
               >
                 Dùng vị trí của tôi
               </button>
