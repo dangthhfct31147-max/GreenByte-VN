@@ -19,12 +19,13 @@ import { MarketplacePage, Product } from './components/pages/MarketplacePage';
 import { CommunityPage } from './components/pages/CommunityPage';
 import { CartPage } from './components/pages/CartPage';
 import { ProductDetailPage } from './components/pages/ProductDetailPage';
+import { SellerProfilePage } from './components/pages/SellerProfilePage';
 import { AdminLoginPage } from './components/pages/AdminLoginPage';
 import { AdminPage } from './components/pages/AdminPage';
 import { getAdminToken, setAdminToken } from '@/utils/adminAuth';
 
 // Types
-type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'product' | 'admin-login' | 'admin';
+type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'product' | 'seller-profile' | 'admin-login' | 'admin';
 
 // URL path to Route mapping
 const pathToRoute: Record<string, Route> = {
@@ -38,6 +39,7 @@ const pathToRoute: Record<string, Route> = {
   '/cart': 'cart',
   '/profile': 'profile',
   '/product': 'product',
+  '/seller': 'seller-profile',
   '/admin': 'admin',
   '/admin/login': 'admin-login',
 };
@@ -52,24 +54,30 @@ const routeToPath: Record<Route, string> = {
   cart: '/cart',
   profile: '/profile',
   product: '/product',
+  'seller-profile': '/seller',
   admin: '/admin',
   'admin-login': '/admin/login',
 };
 
-function getRouteFromPath(): { route: Route; productId: string | null } {
+function getRouteFromPath(): { route: Route; productId: string | null; sellerId: string | null } {
   const path = window.location.pathname;
   const params = new URLSearchParams(window.location.search);
 
   // Handle product detail page
   if (path.startsWith('/product/')) {
     const productId = path.split('/product/')[1];
-    return { route: 'product', productId };
+    return { route: 'product', productId, sellerId: null };
+  }
+
+  if (path.startsWith('/sellers/')) {
+    const sellerId = path.split('/sellers/')[1];
+    return { route: 'seller-profile', productId: null, sellerId };
   }
 
   const productId = params.get('id');
   const route = pathToRoute[path] || 'home';
 
-  return { route, productId: route === 'product' ? productId : null };
+  return { route, productId: route === 'product' ? productId : null, sellerId: null };
 }
 
 export interface CartItem {
@@ -89,14 +97,16 @@ export default function App() {
 
   // Product Detail State
   const [selectedProductId, setSelectedProductId] = useState<string | null>(initialState.productId);
+  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(initialState.sellerId);
   const [adminUser, setAdminUser] = useState<{ email: string } | null>(null);
 
   // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
-      const { route, productId } = getRouteFromPath();
+      const { route, productId, sellerId } = getRouteFromPath();
       setCurrentRoute(route);
       setSelectedProductId(productId);
+      setSelectedSellerId(sellerId);
       setIsMobileMenuOpen(false);
     };
 
@@ -110,8 +120,14 @@ export default function App() {
     if (route === 'product' && productId) {
       path = `/product/${productId}`;
       setSelectedProductId(productId);
+      setSelectedSellerId(null);
+    } else if (route === 'seller-profile' && productId) {
+      path = `/sellers/${productId}`;
+      setSelectedSellerId(productId);
+      setSelectedProductId(null);
     } else {
       setSelectedProductId(null);
+      setSelectedSellerId(null);
     }
 
     // Update browser history
@@ -416,6 +432,15 @@ export default function App() {
             onBack={() => window.history.back()}
             onAddToCart={addToCart}
             onLoginRequest={() => navigate('signup')}
+            onViewSellerProfile={(sellerId) => navigate('seller-profile', sellerId)}
+          />
+        )}
+
+        {currentRoute === 'seller-profile' && selectedSellerId && (
+          <SellerProfilePage
+            sellerId={selectedSellerId}
+            onBack={() => window.history.back()}
+            onViewProduct={(productId) => navigate('product', productId)}
           />
         )}
         {currentRoute === 'map' && (

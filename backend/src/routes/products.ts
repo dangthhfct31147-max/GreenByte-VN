@@ -63,6 +63,55 @@ const ProductListQuerySchema = z.object({
     sort: z.enum(['newest', 'price_asc', 'price_desc', 'quality_desc', 'distance_asc']).optional(),
 });
 
+async function buildSellerRankings(limit: number) {
+    const reviewGroups = await (prisma as any).productReview.groupBy({
+        by: ['sellerId'],
+        _avg: { rating: true },
+        _count: { _all: true },
+    });
+
+    const listingGroups = await (prisma.product as any).groupBy({
+        by: ['sellerId'],
+        where: { deletedAt: null },
+        _count: { _all: true },
+    } as any);
+
+    const listingCountBySeller = new Map<string, number>(
+        listingGroups.map((g: any) => [g.sellerId, Number(g._count?._all ?? 0)]),
+    );
+
+    const sellerIds = reviewGroups.map((g: any) => g.sellerId);
+    const sellers: any[] = sellerIds.length
+        ? await (prisma.user as any).findMany({
+            where: { id: { in: sellerIds } },
+            select: { id: true, name: true, sellerVerified: true },
+        })
+        : [];
+
+    const sellerById = new Map(sellers.map((seller: any) => [seller.id, seller]));
+
+    return reviewGroups
+        .map((group: any) => {
+            const avg = Number(group._avg?.rating ?? 0);
+            const reviews = Number(group._count?._all ?? 0);
+            const listingCount = listingCountBySeller.get(group.sellerId) ?? 0;
+            const qualityScore = avg * 0.8 + Math.min(reviews, 50) / 25 + Math.min(listingCount, 20) / 40;
+            const seller = sellerById.get(group.sellerId);
+            return {
+                seller_id: group.sellerId,
+                seller_name: seller?.name ?? 'Người bán',
+                verified: Boolean(seller?.sellerVerified),
+                average_rating: Number(avg.toFixed(2)),
+                total_reviews: reviews,
+                total_listings: listingCount,
+                ranking_score: Number(qualityScore.toFixed(2)),
+            };
+        })
+        .sort((a: any, b: any) => b.ranking_score - a.ranking_score)
+        .slice(0, limit)
+        .map((item: any, index: number) => ({ ...item, rank: index + 1 }));
+}
+
 productsRouter.get('/', async (req, res, next) => {
     try {
         const query = ProductListQuerySchema.parse(req.query);
@@ -211,54 +260,106 @@ productsRouter.get('/sellers/rankings', async (req, res, next) => {
         const query = z.object({ take: z.coerce.number().int().min(1).max(50).optional() }).parse(req.query);
 
         const rankingTake = query.take ?? 10;
-        const reviewGroups = await (prisma as any).productReview.groupBy({
-            by: ['sellerId'],
-            _avg: { rating: true },
-            _count: { _all: true },
-        });
-
-        const listingGroups = await (prisma.product as any).groupBy({
-            by: ['sellerId'],
-            where: { deletedAt: null },
-            _count: { _all: true },
-        } as any);
-
-        const listingCountBySeller = new Map<string, number>(
-            listingGroups.map((g: any) => [g.sellerId, Number(g._count?._all ?? 0)]),
-        );
-
-        const sellerIds = reviewGroups.map((g: any) => g.sellerId);
-        const sellers: any[] = sellerIds.length
-            ? await (prisma.user as any).findMany({
-                where: { id: { in: sellerIds } },
-                select: { id: true, name: true, sellerVerified: true },
-            })
-            : [];
-
-        const sellerById = new Map(sellers.map((s) => [s.id, s]));
-
-        const ranked = reviewGroups
-            .map((group: any) => {
-                const avg = Number(group._avg?.rating ?? 0);
-                const reviews = Number(group._count?._all ?? 0);
-                const listingCount = listingCountBySeller.get(group.sellerId) ?? 0;
-                const qualityScore = avg * 0.8 + Math.min(reviews, 50) / 25 + Math.min(listingCount, 20) / 40;
-                const seller = sellerById.get(group.sellerId);
-                return {
-                    seller_id: group.sellerId,
-                    seller_name: seller?.name ?? 'Người bán',
-                    verified: Boolean(seller?.sellerVerified),
-                    average_rating: Number(avg.toFixed(2)),
-                    total_reviews: reviews,
-                    total_listings: listingCount,
-                    ranking_score: Number(qualityScore.toFixed(2)),
-                };
-            })
-            .sort((a: any, b: any) => b.ranking_score - a.ranking_score)
-            .slice(0, rankingTake)
-            .map((item: any, index: number) => ({ ...item, rank: index + 1 }));
+        const ranked = await buildSellerRankings(rankingTake);
 
         return res.json({ rankings: ranked });
+    } catch (err) {
+        return next(err);
+    }
+});
+
+productsRouter.get('/sellers/:sellerId/profile', async (req, res, next) => {
+    try {
+        const params = z.object({ sellerId: z.string().uuid() }).parse(req.params);
+
+        const seller = await prisma.user.findUnique({
+            where: { id: params.sellerId },
+            select: { id: true, name: true, sellerVerified: true, createdAt: true },
+        });
+
+        if (!seller) {
+            return res.status(404).json({ error: 'Không tìm thấy seller' });
+        }
+
+        const listings: any[] = await (prisma.product as any).findMany({
+            where: { sellerId: seller.id, deletedAt: null },
+            select: {
+                id: true,
+                title: true,
+                imageUrl: true,
+                location: true,
+                unit: true,
+                category: true,
+                priceVnd: true,
+                qualityScore: true,
+                co2SavingsKg: true,
+                createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 24,
+        } as any);
+
+        const listingIds = listings.map((item: any) => String(item.id));
+
+        const [reviewSummaryRows, inquiryGroups, acceptedGroups, viewGroups, rankings] = await Promise.all([
+            (prisma as any).productReview.groupBy({
+                by: ['sellerId'],
+                where: { sellerId: seller.id },
+                _avg: { rating: true },
+                _count: { _all: true },
+            }),
+            listingIds.length
+                ? (prisma as any).productInquiry.groupBy({ by: ['productId'], where: { productId: { in: listingIds } }, _count: { _all: true } })
+                : Promise.resolve([]),
+            listingIds.length
+                ? (prisma as any).productInquiry.groupBy({ by: ['productId'], where: { productId: { in: listingIds }, status: 'ACCEPTED' }, _count: { _all: true } })
+                : Promise.resolve([]),
+            listingIds.length
+                ? (prisma as any).productViewEvent.groupBy({ by: ['productId'], where: { productId: { in: listingIds } }, _count: { _all: true } })
+                : Promise.resolve([]),
+            buildSellerRankings(100),
+        ]);
+
+        const reviewSummary = reviewSummaryRows[0];
+        const totalViews = (viewGroups as any[]).reduce((sum: number, row: any) => sum + Number(row._count?._all ?? 0), 0);
+        const totalInquiries = (inquiryGroups as any[]).reduce((sum: number, row: any) => sum + Number(row._count?._all ?? 0), 0);
+        const totalAcceptedDeals = (acceptedGroups as any[]).reduce((sum: number, row: any) => sum + Number(row._count?._all ?? 0), 0);
+
+        const rankItem = rankings.find((item: any) => item.seller_id === seller.id) ?? null;
+        const interactionRate = totalViews > 0 ? (totalInquiries / totalViews) * 100 : 0;
+        const conversionRate = totalViews > 0 ? (totalAcceptedDeals / totalViews) * 100 : 0;
+
+        return res.json({
+            seller: {
+                id: seller.id,
+                name: seller.name,
+                verified: Boolean(seller.sellerVerified),
+                joined_at: seller.createdAt,
+            },
+            overview: {
+                rank: rankItem?.rank ?? null,
+                totalListings: listings.length,
+                totalReviews: Number(reviewSummary?._count?._all ?? 0),
+                averageRating: Number((reviewSummary?._avg?.rating ?? 0).toFixed(2)),
+                totalViews,
+                totalInquiries,
+                totalAcceptedDeals,
+                interactionRatePct: Number(interactionRate.toFixed(2)),
+                conversionRatePct: Number(conversionRate.toFixed(2)),
+            },
+            listings: listings.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                image: item.imageUrl,
+                location: item.location,
+                unit: item.unit,
+                category: item.category,
+                price: item.priceVnd,
+                quality_score: item.qualityScore,
+                co2_savings_kg: item.co2SavingsKg,
+                posted_at: item.createdAt,
+            })),
+        });
     } catch (err) {
         return next(err);
     }

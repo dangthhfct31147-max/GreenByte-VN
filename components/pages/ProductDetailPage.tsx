@@ -94,6 +94,7 @@ interface ProductDetailPageProps {
     onBack: () => void;
     onAddToCart: (product: Product) => void;
     onLoginRequest: () => void;
+    onViewSellerProfile: (sellerId: string) => void;
 }
 
 const DEFAULT_PRODUCT_IMAGE = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%22800%22 viewBox=%220 0 1200 800%22%3E%3Crect width=%221200%22 height=%22800%22 fill=%22%23e2e8f0%22/%3E%3Cg fill=%22%2394a3b8%22%3E%3Ccircle cx=%22600%22 cy=%22310%22 r=%2260%22/%3E%3Cpath d=%22M430 520c40-78 104-118 170-118s130 40 170 118z%22/%3E%3C/g%3E%3Ctext x=%22600%22 y=%22620%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2236%22 fill=%2264748b%22%3EAnh san pham%3C/text%3E%3C/svg%3E';
@@ -104,6 +105,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     onBack,
     onAddToCart,
     onLoginRequest,
+    onViewSellerProfile,
 }) => {
     const [product, setProduct] = useState<Product | null>(null);
     const [loading, setLoading] = useState(true);
@@ -419,7 +421,16 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                                         {ranking && <div className="text-xs text-slate-500 mt-1">Hạng seller hiện tại: #{ranking.rank}</div>}
                                     </div>
                                 </div>
-                                <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-colors">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (product.seller_id) {
+                                            onViewSellerProfile(product.seller_id);
+                                        }
+                                    }}
+                                    disabled={!product.seller_id}
+                                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
                                     <User size={16} />
                                     Hồ sơ seller
                                 </button>
