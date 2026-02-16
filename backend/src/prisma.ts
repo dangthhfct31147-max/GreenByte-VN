@@ -12,7 +12,7 @@ function createPrisma(): PrismaLike {
     const url = process.env.DATABASE_URL;
     const useAccelerate = typeof url === 'string' && url.startsWith('prisma://');
     if (useAccelerate) {
-        return new PrismaClient({ datasourceUrl: url }).$extends(withAccelerate()) as unknown as PrismaLike;
+        return new PrismaClient({ accelerateUrl: url }).$extends(withAccelerate()) as unknown as PrismaLike;
     }
     return new PrismaClient();
 }

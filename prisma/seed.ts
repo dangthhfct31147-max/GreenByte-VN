@@ -110,7 +110,7 @@ const SAMPLE_PRODUCTS = [
         unit: 'kg',
         category: 'Phụ phẩm khác',
         location: 'Nghệ An',
-        imageUrl: 'https://images.unsplash.com/photo-1567892320421-1c657571ea4a?auto=format&fit=crop&w=1200&q=80',
+        imageUrl: 'https://images.unsplash.com/photo-1506806732259-39c2d0268443?auto=format&fit=crop&w=1200&q=80',
         description: 'Vỏ lạc đã phơi khô, sạch. Dùng làm nhiên liệu đốt, lót chuồng, hoặc ủ phân bón. Giàu cellulose và lignin.',
         co2SavingsKg: 6,
     },
@@ -313,7 +313,7 @@ async function main() {
     });
 
     if (oldSellerProducts.length > 0) {
-        const oldSellerProductIds = oldSellerProducts.map((p) => p.id);
+        const oldSellerProductIds = oldSellerProducts.map((p: { id: string }) => p.id);
         const oldInquiryIds = await (prisma as any).productInquiry.findMany({
             where: { productId: { in: oldSellerProductIds } },
             select: { id: true },
@@ -403,7 +403,7 @@ async function main() {
     });
 
     if (oldPosts.length > 0) {
-        const oldPostIds = oldPosts.map((p) => p.id);
+        const oldPostIds = oldPosts.map((p: { id: string }) => p.id);
         await prisma.postLike.deleteMany({ where: { postId: { in: oldPostIds } } });
         await (prisma as any).postComment.deleteMany({ where: { postId: { in: oldPostIds } } });
         await prisma.post.deleteMany({ where: { id: { in: oldPostIds } } });
