@@ -70,7 +70,12 @@ const OptimizedImage: React.FC<OptimizedImageProps> = memo(({
 
     // Handle image error
     const handleError = () => {
-        setIsError(true);
+        if (!isError && fallback && fallback !== src) {
+            setIsError(true);
+            setIsLoaded(false);
+            return;
+        }
+
         setIsLoaded(true);
     };
 
