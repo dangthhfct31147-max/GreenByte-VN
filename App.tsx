@@ -392,7 +392,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 bg-slate-50">
-        {currentRoute === 'home' && <HomePage onNavigate={navigate} />}
+        {currentRoute === 'home' && <HomePage onNavigate={navigate} user={user} />}
         {currentRoute === 'signup' && (
           <SignupPage
             onSignupSuccess={({ user }) => {

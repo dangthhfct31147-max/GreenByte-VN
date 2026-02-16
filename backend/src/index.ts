@@ -15,6 +15,7 @@ import { cartRouter } from './routes/cart';
 import { postsRouter } from './routes/posts';
 import { eventsRouter } from './routes/events';
 import { pollutionRouter } from './routes/pollution';
+import { recommendationsRouter } from './routes/recommendations';
 import { adminRouter } from './routes/admin';
 import { errorHandler, notFound } from './middleware/errors';
 import { prisma } from './prisma';
@@ -152,6 +153,7 @@ app.use('/api/products', productsRouter);
 app.use('/api', cartRouter);
 app.use('/api', postsRouter);
 app.use('/api', eventsRouter);
+app.use('/api', recommendationsRouter);
 app.use('/api', pollutionRouter);
 app.use('/api/admin', adminRouter);
 
