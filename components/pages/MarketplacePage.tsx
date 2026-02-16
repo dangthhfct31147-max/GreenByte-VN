@@ -268,7 +268,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
               <input
                 type="number"
                 min={0}
-                placeholder="Khoảng cách (km)"
+                placeholder="Khoảng cách"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
                 value={maxDistanceKm}
                 onChange={(e) => setMaxDistanceKm(e.target.value)}
