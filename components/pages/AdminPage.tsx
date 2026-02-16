@@ -16,11 +16,13 @@ import {
     Check,
     X,
     Shield,
+    Activity,
+    Bell,
 } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import { getAdminToken } from '@/utils/adminAuth';
 
-type AdminTab = 'dashboard' | 'users' | 'moderation' | 'products' | 'posts' | 'events' | 'pollution' | 'future';
+type AdminTab = 'dashboard' | 'analytics' | 'users' | 'moderation' | 'products' | 'posts' | 'events' | 'pollution' | 'future';
 
 interface AdminPageProps {
     adminEmail: string;
@@ -45,6 +47,7 @@ interface DashboardData {
 
 const TABS: Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
     { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+    { id: 'analytics', label: 'Vận hành (P3)', icon: Activity },
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'moderation', label: 'Kiểm duyệt', icon: Shield },
     { id: 'products', label: 'Sản phẩm', icon: ShoppingBag },
@@ -81,6 +84,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     const [events, setEvents] = useState<any[]>([]);
     const [reports, setReports] = useState<any[]>([]);
     const [moderationQueue, setModerationQueue] = useState<any[]>([]);
+    const [analyticsOverview, setAnalyticsOverview] = useState<any | null>(null);
+    const [alerts, setAlerts] = useState<any[]>([]);
+    const [sla, setSla] = useState<any | null>(null);
+    const [auditSummary, setAuditSummary] = useState<any | null>(null);
 
     const loadData = useCallback(async (tab: AdminTab, query = '', includeSoftDeleted = false) => {
         setLoading(true);
@@ -92,6 +99,33 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải dashboard');
                 setDashboard(data as DashboardData);
+                return;
+            }
+
+            if (tab === 'analytics') {
+                const [overviewRes, alertsRes, slaRes, auditRes] = await Promise.all([
+                    adminFetch('analytics/overview?days=14'),
+                    adminFetch('analytics/alerts'),
+                    adminFetch('analytics/sla'),
+                    adminFetch('audit-summary?days=14'),
+                ]);
+
+                const [overviewData, alertsData, slaData, auditData] = await Promise.all([
+                    overviewRes.json(),
+                    alertsRes.json(),
+                    slaRes.json(),
+                    auditRes.json(),
+                ]);
+
+                if (!overviewRes.ok) throw new Error(overviewData?.error ?? 'Không thể tải analytics overview');
+                if (!alertsRes.ok) throw new Error(alertsData?.error ?? 'Không thể tải alerts');
+                if (!slaRes.ok) throw new Error(slaData?.error ?? 'Không thể tải SLA');
+                if (!auditRes.ok) throw new Error(auditData?.error ?? 'Không thể tải audit summary');
+
+                setAnalyticsOverview(overviewData);
+                setAlerts(Array.isArray(alertsData?.alerts) ? alertsData.alerts : []);
+                setSla(slaData?.sla ?? null);
+                setAuditSummary(auditData ?? null);
                 return;
             }
 
@@ -283,7 +317,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     <div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <h2 className="text-xl font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</h2>
 
-                        {activeTab !== 'dashboard' && activeTab !== 'future' && (
+                        {activeTab !== 'dashboard' && activeTab !== 'future' && activeTab !== 'analytics' && (
                             <div className="w-full md:w-auto flex flex-col md:flex-row md:items-center gap-3">
                                 {isModerationTab && (
                                     <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -347,6 +381,77 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'analytics' && (
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                <StatCard label="Users" value={analyticsOverview?.kpis?.totalUsers ?? 0} />
+                                <StatCard label="Products" value={analyticsOverview?.kpis?.totalProducts ?? 0} />
+                                <StatCard label="Pending" value={analyticsOverview?.kpis?.pendingModeration ?? 0} />
+                                <StatCard label="Failed login 1h" value={analyticsOverview?.kpis?.failedLogins1h ?? 0} />
+                                <StatCard label="Locked users" value={analyticsOverview?.kpis?.lockedUsers ?? 0} />
+                                <StatCard label="SLA health" value={sla?.health ?? '-'} />
+                            </div>
+
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                <div className="border border-slate-100 rounded-xl p-4">
+                                    <h3 className="font-semibold text-slate-900 mb-3 inline-flex items-center gap-2"><Bell size={16} /> Cảnh báo hệ thống</h3>
+                                    <div className="space-y-2">
+                                        {alerts.map((alert) => (
+                                            <div key={alert.id} className={`rounded-lg px-3 py-2 text-sm border ${alert.level === 'critical' ? 'border-red-200 bg-red-50 text-red-700' : alert.level === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                                <div className="font-medium">{alert.title}</div>
+                                                <div>{alert.detail}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="border border-slate-100 rounded-xl p-4">
+                                    <h3 className="font-semibold text-slate-900 mb-3">SLA Snapshot</h3>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                        <div className="text-slate-600">Availability</div>
+                                        <div className="font-medium text-slate-800">{sla?.availabilityPercent ?? 0}%</div>
+                                        <div className="text-slate-600">5xx Error</div>
+                                        <div className="font-medium text-slate-800">{sla?.serverErrorPercent ?? 0}%</div>
+                                        <div className="text-slate-600">Avg Latency</div>
+                                        <div className="font-medium text-slate-800">{sla?.avgLatencyMs ?? 0}ms</div>
+                                        <div className="text-slate-600">Max Latency</div>
+                                        <div className="font-medium text-slate-800">{sla?.maxLatencyMs ?? 0}ms</div>
+                                        <div className="text-slate-600">Total Requests</div>
+                                        <div className="font-medium text-slate-800">{sla?.totalRequests ?? 0}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                <div className="border border-slate-100 rounded-xl p-4">
+                                    <h3 className="font-semibold text-slate-900 mb-3">Timeline 14 ngày</h3>
+                                    <AdminTable headers={['Ngày', 'Users mới', 'Admin actions']}>
+                                        {(analyticsOverview?.timeline ?? []).map((row: any) => (
+                                            <tr key={row.date} className="border-b border-slate-100">
+                                                <td className="py-2 px-2 text-slate-700">{row.date}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.usersCreated}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.adminActions}</td>
+                                            </tr>
+                                        ))}
+                                    </AdminTable>
+                                </div>
+
+                                <div className="border border-slate-100 rounded-xl p-4">
+                                    <h3 className="font-semibold text-slate-900 mb-3">Audit Summary</h3>
+                                    <div className="text-sm text-slate-600 mb-2">Tổng thao tác: <span className="font-medium text-slate-800">{auditSummary?.totalActions ?? 0}</span></div>
+                                    <AdminTable headers={['Action', 'Số lần']}>
+                                        {(auditSummary?.topActions ?? []).map((item: any) => (
+                                            <tr key={item.action} className="border-b border-slate-100">
+                                                <td className="py-2 px-2 text-slate-700">{item.action}</td>
+                                                <td className="py-2 px-2 text-slate-700">{item.count}</td>
+                                            </tr>
+                                        ))}
+                                    </AdminTable>
                                 </div>
                             </div>
                         </div>
@@ -519,6 +624,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
         </div>
     );
 };
+
+const StatCard: React.FC<{ label: string; value: string | number }> = ({ label, value }) => (
+    <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+        <div className="text-xs text-slate-500">{label}</div>
+        <div className="text-2xl font-bold text-slate-900 mt-1">{value}</div>
+    </div>
+);
 
 const AdminTable: React.FC<{ headers: string[]; children: React.ReactNode }> = ({ headers, children }) => (
     <div className="border border-slate-200 rounded-xl overflow-hidden">

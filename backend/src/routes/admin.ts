@@ -12,6 +12,7 @@ import {
     type AdminRequest,
 } from '../middleware/adminAuth';
 import { writeAdminAuditLog } from '../lib/adminAudit';
+import { getMetricsSnapshot } from '../lib/metrics';
 
 export const adminRouter = Router();
 
@@ -46,6 +47,16 @@ const ModerateDecisionSchema = z.object({
 const UserLockSchema = z.object({
     minutes: z.coerce.number().int().min(1).max(7 * 24 * 60).optional(),
 });
+
+const AnalyticsQuerySchema = z.object({
+    days: z.coerce.number().int().min(1).max(60).optional(),
+});
+
+function startOfDay(date: Date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
 
 const ADMIN_LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ADMIN_LOGIN_MAX_ATTEMPTS = 10;
@@ -921,6 +932,247 @@ adminRouter.patch('/moderation/:resource/:id/reject', requireAdmin, requireAdmin
         }).catch(() => undefined);
 
         res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('dashboard:read'), async (req, res, next) => {
+    try {
+        const query = AnalyticsQuerySchema.parse(req.query);
+        const days = query.days ?? 14;
+        const fromDate = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
+
+        const [
+            pendingPosts,
+            pendingEvents,
+            pendingPollution,
+            failedLogins1h,
+            lockedUsers,
+            totalUsers,
+            totalProducts,
+        ] = await Promise.all([
+            (prisma as any).post.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).event.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).pollutionReport.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).loginAttempt.count({ where: { success: false, createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } } }),
+            (prisma as any).user.count({ where: { lockedUntil: { gt: new Date() } } }),
+            (prisma as any).user.count(),
+            (prisma as any).product.count({ where: { deletedAt: null } }),
+        ]);
+
+        const [usersByDay, auditByDay] = await Promise.all([
+            (prisma as any).user.groupBy({
+                by: ['createdAt'],
+                where: { createdAt: { gte: startOfDay(fromDate) } },
+                _count: { _all: true },
+                orderBy: { createdAt: 'asc' },
+            }),
+            (prisma as any).adminAuditLog.groupBy({
+                by: ['createdAt'],
+                where: { createdAt: { gte: startOfDay(fromDate) } },
+                _count: { _all: true },
+                orderBy: { createdAt: 'asc' },
+            }),
+        ]);
+
+        const timelineMap = new Map<string, { date: string; usersCreated: number; adminActions: number }>();
+        for (let i = 0; i < days; i++) {
+            const date = new Date(fromDate.getTime() + i * 24 * 60 * 60 * 1000);
+            const key = startOfDay(date).toISOString().slice(0, 10);
+            timelineMap.set(key, { date: key, usersCreated: 0, adminActions: 0 });
+        }
+
+        for (const row of usersByDay) {
+            const key = startOfDay(new Date(row.createdAt)).toISOString().slice(0, 10);
+            const current = timelineMap.get(key);
+            if (current) current.usersCreated += row._count?._all ?? 0;
+        }
+
+        for (const row of auditByDay) {
+            const key = startOfDay(new Date(row.createdAt)).toISOString().slice(0, 10);
+            const current = timelineMap.get(key);
+            if (current) current.adminActions += row._count?._all ?? 0;
+        }
+
+        res.json({
+            kpis: {
+                totalUsers,
+                totalProducts,
+                pendingModeration: pendingPosts + pendingEvents + pendingPollution,
+                pendingBreakdown: {
+                    posts: pendingPosts,
+                    events: pendingEvents,
+                    pollution: pendingPollution,
+                },
+                failedLogins1h,
+                lockedUsers,
+            },
+            timeline: [...timelineMap.values()],
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/analytics/alerts', requireAdmin, requireAdminPermission('dashboard:read'), async (_req, res, next) => {
+    try {
+        const [pendingPosts, pendingEvents, pendingPollution, lockedUsers, failedLogins1h] = await Promise.all([
+            (prisma as any).post.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).event.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).pollutionReport.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
+            (prisma as any).user.count({ where: { lockedUntil: { gt: new Date() } } }),
+            (prisma as any).loginAttempt.count({ where: { success: false, createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } } }),
+        ]);
+
+        const metrics = getMetricsSnapshot();
+        const totalRequests = metrics.requests.total || 0;
+        const serverErrors = metrics.requests.status['5xx'] || 0;
+        const serverErrorRate = totalRequests > 0 ? Number((serverErrors / totalRequests).toFixed(4)) : 0;
+
+        const alerts: Array<{ id: string; level: 'info' | 'warning' | 'critical'; title: string; detail: string }> = [];
+        const pendingTotal = pendingPosts + pendingEvents + pendingPollution;
+
+        if (pendingTotal >= 30) {
+            alerts.push({
+                id: 'pending-moderation-high',
+                level: 'critical',
+                title: 'Tồn đọng kiểm duyệt cao',
+                detail: `${pendingTotal} mục đang chờ duyệt (${pendingPosts} bài viết, ${pendingEvents} sự kiện, ${pendingPollution} báo cáo).`,
+            });
+        } else if (pendingTotal >= 10) {
+            alerts.push({
+                id: 'pending-moderation-medium',
+                level: 'warning',
+                title: 'Tồn đọng kiểm duyệt',
+                detail: `${pendingTotal} mục đang chờ duyệt.`,
+            });
+        }
+
+        if (lockedUsers > 0) {
+            alerts.push({
+                id: 'locked-users',
+                level: lockedUsers >= 10 ? 'critical' : 'warning',
+                title: 'Tài khoản đang bị khóa',
+                detail: `${lockedUsers} người dùng đang trong trạng thái khóa tạm thời.`,
+            });
+        }
+
+        if (failedLogins1h >= 20) {
+            alerts.push({
+                id: 'failed-logins',
+                level: 'critical',
+                title: 'Đăng nhập thất bại tăng cao',
+                detail: `${failedLogins1h} lần đăng nhập thất bại trong 1 giờ gần nhất.`,
+            });
+        } else if (failedLogins1h >= 8) {
+            alerts.push({
+                id: 'failed-logins-warning',
+                level: 'warning',
+                title: 'Đăng nhập thất bại tăng',
+                detail: `${failedLogins1h} lần đăng nhập thất bại trong 1 giờ gần nhất.`,
+            });
+        }
+
+        if (serverErrorRate >= 0.05) {
+            alerts.push({
+                id: 'server-error-rate',
+                level: 'critical',
+                title: 'Tỷ lệ lỗi máy chủ cao',
+                detail: `Tỷ lệ phản hồi 5xx là ${(serverErrorRate * 100).toFixed(2)}%.`,
+            });
+        }
+
+        if (alerts.length === 0) {
+            alerts.push({
+                id: 'healthy',
+                level: 'info',
+                title: 'Hệ thống ổn định',
+                detail: 'Không phát hiện cảnh báo nghiêm trọng tại thời điểm này.',
+            });
+        }
+
+        res.json({ alerts });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/analytics/sla', requireAdmin, requireAdminPermission('dashboard:read'), async (_req, res, next) => {
+    try {
+        const metrics = getMetricsSnapshot();
+        const total = metrics.requests.total || 0;
+        const s2 = metrics.requests.status['2xx'] || 0;
+        const s3 = metrics.requests.status['3xx'] || 0;
+        const s4 = metrics.requests.status['4xx'] || 0;
+        const s5 = metrics.requests.status['5xx'] || 0;
+        const successRate = total > 0 ? Number((((s2 + s3) / total) * 100).toFixed(2)) : 100;
+        const errorRate = total > 0 ? Number(((s5 / total) * 100).toFixed(2)) : 0;
+
+        const health =
+            successRate >= 99 && metrics.requests.avgDurationMs <= 600 && errorRate < 1
+                ? 'good'
+                : successRate >= 97 && metrics.requests.avgDurationMs <= 1000 && errorRate < 3
+                    ? 'warning'
+                    : 'critical';
+
+        res.json({
+            sla: {
+                health,
+                availabilityPercent: successRate,
+                serverErrorPercent: errorRate,
+                avgLatencyMs: metrics.requests.avgDurationMs,
+                maxLatencyMs: metrics.requests.maxDurationMs,
+                totalRequests: total,
+                statusBuckets: { '2xx': s2, '3xx': s3, '4xx': s4, '5xx': s5 },
+            },
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/audit-summary', requireAdmin, requireAdminPermission('audit:read'), async (req, res, next) => {
+    try {
+        const query = AnalyticsQuerySchema.parse(req.query);
+        const days = query.days ?? 14;
+        const fromDate = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
+
+        const [topActions, recentDenied, totalActions] = await Promise.all([
+            (prisma as any).adminAuditLog.groupBy({
+                by: ['action'],
+                where: { createdAt: { gte: startOfDay(fromDate) } },
+                _count: { _all: true },
+                orderBy: { _count: { action: 'desc' } },
+                take: 10,
+            }),
+            (prisma as any).adminAuditLog.findMany({
+                where: { createdAt: { gte: startOfDay(fromDate) }, status: { in: ['denied', 'error'] } },
+                orderBy: { createdAt: 'desc' },
+                take: 20,
+            }),
+            (prisma as any).adminAuditLog.count({
+                where: { createdAt: { gte: startOfDay(fromDate) } },
+            }),
+        ]);
+
+        res.json({
+            windowDays: days,
+            totalActions,
+            topActions: topActions.map((item: any) => ({
+                action: item.action,
+                count: item._count?._all ?? 0,
+            })),
+            incidents: recentDenied.map((item: any) => ({
+                id: item.id,
+                adminEmail: item.adminEmail,
+                action: item.action,
+                resource: item.resource,
+                status: item.status,
+                message: item.message,
+                createdAt: item.createdAt,
+            })),
+        });
     } catch (err) {
         next(err);
     }
