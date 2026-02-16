@@ -108,6 +108,7 @@ postsRouter.get('/posts', optionalAuth, async (req: AuthenticatedRequest, res, n
         const userId = req.user?.id;
 
         const rows = await (prisma as any).post.findMany({
+            where: { deletedAt: null },
             orderBy: { createdAt: 'desc' },
             take: query.take ?? 50,
             include: {
@@ -189,6 +190,12 @@ postsRouter.post('/posts/:id/like', requireAuth, async (req: AuthenticatedReques
 
         // idempotent like: create like row if missing
         await (prisma as any).$transaction(async (tx: any) => {
+            const post = await tx.post.findFirst({
+                where: { id: postId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!post) return;
+
             const existing = await tx.postLike.findUnique({
                 where: { postId_userId: { postId, userId } },
                 select: { id: true },
@@ -226,6 +233,12 @@ postsRouter.delete('/posts/:id/like', requireAuth, async (req: AuthenticatedRequ
         let nextLikeCount: number | null = null;
 
         await (prisma as any).$transaction(async (tx: any) => {
+            const post = await tx.post.findFirst({
+                where: { id: postId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!post) return;
+
             const existing = await tx.postLike.findUnique({
                 where: { postId_userId: { postId, userId } },
                 select: { id: true },
@@ -265,6 +278,12 @@ postsRouter.get('/posts/:id/comments', optionalAuth, async (req: AuthenticatedRe
             })
             .parse(req.query);
 
+        const post = await (prisma as any).post.findFirst({
+            where: { id: postId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!post) return res.status(404).json({ error: 'Bài viết không tồn tại' });
+
         const rows = await (prisma as any).postComment.findMany({
             where: { postId },
             orderBy: { createdAt: 'asc' },
@@ -300,8 +319,8 @@ postsRouter.post('/posts/:id/comments', requireAuth, async (req: AuthenticatedRe
         const userId = req.user!.id;
         const body = CreateCommentSchema.parse(req.body);
 
-        const existingPost = await (prisma as any).post.findUnique({
-            where: { id: postId },
+        const existingPost = await (prisma as any).post.findFirst({
+            where: { id: postId, deletedAt: null },
             select: { id: true },
         });
 

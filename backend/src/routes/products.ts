@@ -45,6 +45,7 @@ productsRouter.get('/', async (req, res, next) => {
     console.log(`🔍 Cache miss: ${cacheKey}, querying database...`);
 
     const where: Record<string, unknown> = {};
+    (where as any).deletedAt = null;
     if (query.category && query.category !== 'Tất cả') {
       (where as any).category = query.category;
     }
@@ -123,8 +124,8 @@ productsRouter.get('/:id', async (req, res, next) => {
       return res.json(JSON.parse(cached));
     }
 
-    const product = await prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findFirst({
+      where: { id, deletedAt: null },
       include: { seller: { select: { name: true } } },
     });
 

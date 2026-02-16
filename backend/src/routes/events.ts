@@ -31,6 +31,7 @@ eventsRouter.get('/events', optionalAuth, async (req: AuthenticatedRequest, res,
         const userId = req.user?.id;
 
         const rows = await (prisma as any).event.findMany({
+            where: { deletedAt: null },
             orderBy: { startAt: 'asc' },
             take: query.take ?? 50,
             include: {
@@ -128,6 +129,15 @@ eventsRouter.post('/events/:id/rsvp', requireAuth, async (req: AuthenticatedRequ
         const userId = req.user!.id;
         const eventId = z.string().uuid().parse(req.params.id);
 
+        const event = await (prisma as any).event.findFirst({
+            where: { id: eventId, deletedAt: null },
+            select: { id: true },
+        });
+
+        if (!event) {
+            return res.status(404).json({ error: 'Sự kiện không tồn tại' });
+        }
+
         await (prisma as any).eventRsvp.upsert({
             where: { eventId_userId: { eventId, userId } },
             update: {},
@@ -144,6 +154,12 @@ eventsRouter.delete('/events/:id/rsvp', requireAuth, async (req: AuthenticatedRe
     try {
         const userId = req.user!.id;
         const eventId = z.string().uuid().parse(req.params.id);
+
+        const event = await (prisma as any).event.findFirst({
+            where: { id: eventId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!event) return res.status(404).json({ error: 'Sự kiện không tồn tại' });
 
         try {
             await (prisma as any).eventRsvp.delete({

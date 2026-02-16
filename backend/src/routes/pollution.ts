@@ -20,6 +20,7 @@ function humanizeFromDate(date: Date): string {
 pollutionRouter.get('/pollution', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
         const rows = await (prisma as any).pollutionReport.findMany({
+            where: { deletedAt: null },
             orderBy: { createdAt: 'desc' },
             take: 500,
             include: { owner: { select: { name: true } } },
@@ -95,8 +96,8 @@ pollutionRouter.delete('/pollution/:id', requireAuth, async (req: AuthenticatedR
         const userId = req.user!.id;
         const id = z.string().uuid().parse(req.params.id);
 
-        const existing = await (prisma as any).pollutionReport.findUnique({
-            where: { id },
+        const existing = await (prisma as any).pollutionReport.findFirst({
+            where: { id, deletedAt: null },
             select: { ownerId: true },
         });
         if (!existing) return res.status(204).end();

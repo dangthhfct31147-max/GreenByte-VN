@@ -8,6 +8,12 @@ datasource db {
 	url      = env("DATABASE_URL")
 }
 
+enum AdminRole {
+	SUPERADMIN
+	MODERATOR
+	ANALYST
+}
+
 model User {
 	id           String    @id @default(uuid())
 	email        String    @unique
@@ -73,12 +79,14 @@ model Product {
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
+	deletedAt DateTime?
 
 	@@index([category])
 	@@index([sellerId])
 	@@index([createdAt])
 	@@index([title])
 	@@index([location])
+	@@index([deletedAt])
 }
 
 model Cart {
@@ -124,8 +132,10 @@ model Post {
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
+	deletedAt DateTime?
 
 	@@index([authorId])
+	@@index([deletedAt])
 }
 
 model PostComment {
@@ -172,6 +182,9 @@ model Event {
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
+	deletedAt DateTime?
+
+	@@index([deletedAt])
 }
 
 model EventRsvp {
@@ -201,9 +214,31 @@ model PollutionReport {
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
+	deletedAt DateTime?
 
 	@@index([type])
 	@@index([ownerId])
+	@@index([deletedAt])
+}
+
+model AdminAuditLog {
+	id            String    @id @default(uuid())
+	adminEmail    String
+	adminRole     AdminRole
+	action        String
+	resource      String
+	resourceId    String?
+	status        String
+	message       String?
+	ip            String?
+	userAgent     String?
+	requestId     String?
+	metadataJson  String?
+	createdAt     DateTime  @default(now())
+
+	@@index([createdAt])
+	@@index([adminEmail])
+	@@index([resource, action])
 }
 
 model LoginAttempt {

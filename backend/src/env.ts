@@ -57,6 +57,7 @@ const EnvSchema = z.object({
     ADMIN_PASSWORD: z.string().min(8).optional(),
     ADMIN_PASSWORD_HASH: z.string().min(20).optional(),
     ADMIN_JWT_SECRET: z.string().min(32).optional(),
+    ADMIN_ROLE: z.enum(['superadmin', 'moderator', 'analyst']).default('superadmin'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -87,6 +88,7 @@ export function getEnv(): Env {
         ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
         ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH,
         ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET,
+        ADMIN_ROLE: process.env.ADMIN_ROLE,
     });
 
     if (!parsed.success) {

@@ -9,6 +9,7 @@ import {
     Rocket,
     RefreshCw,
     Trash2,
+    RotateCcw,
     LogOut,
     Home,
     Search,
@@ -67,6 +68,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const [includeDeleted, setIncludeDeleted] = useState(false);
 
     const [dashboard, setDashboard] = useState<DashboardData | null>(null);
     const [users, setUsers] = useState<any[]>([]);
@@ -75,7 +77,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     const [events, setEvents] = useState<any[]>([]);
     const [reports, setReports] = useState<any[]>([]);
 
-    const loadData = useCallback(async (tab: AdminTab, query = '') => {
+    const loadData = useCallback(async (tab: AdminTab, query = '', includeSoftDeleted = false) => {
         setLoading(true);
         setError(null);
 
@@ -89,6 +91,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             const searchSuffix = query.trim() ? `&search=${encodeURIComponent(query.trim())}` : '';
+            const includeDeletedSuffix = includeSoftDeleted ? '&includeDeleted=true' : '';
 
             if (tab === 'users') {
                 const res = await adminFetch(`users?take=120${searchSuffix}`);
@@ -99,7 +102,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             if (tab === 'products') {
-                const res = await adminFetch(`products?take=120${searchSuffix}`);
+                const res = await adminFetch(`products?take=120${searchSuffix}${includeDeletedSuffix}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải sản phẩm');
                 setProducts(Array.isArray(data?.products) ? data.products : []);
@@ -107,7 +110,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             if (tab === 'posts') {
-                const res = await adminFetch(`posts?take=120${searchSuffix}`);
+                const res = await adminFetch(`posts?take=120${searchSuffix}${includeDeletedSuffix}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải bài viết');
                 setPosts(Array.isArray(data?.posts) ? data.posts : []);
@@ -115,7 +118,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             if (tab === 'events') {
-                const res = await adminFetch(`events?take=120${searchSuffix}`);
+                const res = await adminFetch(`events?take=120${searchSuffix}${includeDeletedSuffix}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải sự kiện');
                 setEvents(Array.isArray(data?.events) ? data.events : []);
@@ -123,7 +126,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             if (tab === 'pollution') {
-                const res = await adminFetch(`pollution?take=200${searchSuffix}`);
+                const res = await adminFetch(`pollution?take=200${searchSuffix}${includeDeletedSuffix}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải báo cáo ô nhiễm');
                 setReports(Array.isArray(data?.reports) ? data.reports : []);
@@ -136,8 +139,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     }, []);
 
     useEffect(() => {
-        void loadData(activeTab, search);
-    }, [activeTab, loadData, search]);
+        void loadData(activeTab, search, includeDeleted);
+    }, [activeTab, includeDeleted, loadData, search]);
 
     const statsCards = useMemo(() => {
         if (!dashboard) return [];
@@ -160,11 +163,26 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data?.error ?? 'Không thể xóa');
             }
-            await loadData(activeTab, search);
+            await loadData(activeTab, search, includeDeleted);
         } catch (e: any) {
             alert(e?.message ?? 'Có lỗi xảy ra khi xóa');
         }
     };
+
+    const handleRestore = async (resource: 'products' | 'posts' | 'events' | 'pollution', id: string) => {
+        try {
+            const res = await adminFetch(`${resource}/${id}/restore`, { method: 'PATCH' });
+            if (!res.ok && res.status !== 204) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data?.error ?? 'Không thể khôi phục');
+            }
+            await loadData(activeTab, search, includeDeleted);
+        } catch (e: any) {
+            alert(e?.message ?? 'Có lỗi xảy ra khi khôi phục');
+        }
+    };
+
+    const isModerationTab = activeTab === 'products' || activeTab === 'posts' || activeTab === 'events' || activeTab === 'pollution';
 
     return (
         <div className="min-h-screen bg-slate-100">
@@ -178,7 +196,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                         <button onClick={onBackHome} className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm inline-flex items-center gap-2">
                             <Home size={16} /> Trang chủ
                         </button>
-                        <button onClick={() => void loadData(activeTab, search)} className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm inline-flex items-center gap-2">
+                        <button onClick={() => void loadData(activeTab, search, includeDeleted)} className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm inline-flex items-center gap-2">
                             <RefreshCw size={16} /> Làm mới
                         </button>
                         <button onClick={onLogout} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm inline-flex items-center gap-2">
@@ -212,16 +230,30 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                         <h2 className="text-xl font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</h2>
 
                         {activeTab !== 'dashboard' && activeTab !== 'future' && (
-                            <label className="relative block w-full md:w-80">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input
-                                    type="text"
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Tìm kiếm..."
-                                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                                />
-                            </label>
+                            <div className="w-full md:w-auto flex flex-col md:flex-row md:items-center gap-3">
+                                {isModerationTab && (
+                                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={includeDeleted}
+                                            onChange={(e) => setIncludeDeleted(e.target.checked)}
+                                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                        />
+                                        Hiện bản ghi đã xóa mềm
+                                    </label>
+                                )}
+
+                                <label className="relative block w-full md:w-80">
+                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        placeholder="Tìm kiếm..."
+                                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                                    />
+                                </label>
+                            </div>
                         )}
                     </div>
 
@@ -280,15 +312,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     )}
 
                     {activeTab === 'products' && (
-                        <AdminTable headers={['Tiêu đề', 'Người bán', 'Danh mục', 'Giá', '']}>
+                        <AdminTable headers={['Tiêu đề', 'Người bán', 'Danh mục', 'Giá', 'Trạng thái', '']}>
                             {products.map((item) => (
                                 <tr key={item.id} className="border-b border-slate-100">
                                     <td className="py-2 px-2 text-slate-800">{item.title}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.seller?.name}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.category}</td>
                                     <td className="py-2 px-2 text-slate-600">{new Intl.NumberFormat('vi-VN').format(item.priceVnd)}đ</td>
+                                    <td className="py-2 px-2 text-slate-600">{item.deletedAt ? 'Đã xóa mềm' : 'Đang hiển thị'}</td>
                                     <td className="py-2 px-2 text-right">
-                                        <button onClick={() => void handleDelete('products', item.id)} title="Xóa sản phẩm" aria-label="Xóa sản phẩm" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        {item.deletedAt ? (
+                                            <button onClick={() => void handleRestore('products', item.id)} title="Khôi phục sản phẩm" aria-label="Khôi phục sản phẩm" className="text-emerald-600 hover:text-emerald-700"><RotateCcw size={16} /></button>
+                                        ) : (
+                                            <button onClick={() => void handleDelete('products', item.id)} title="Xóa sản phẩm" aria-label="Xóa sản phẩm" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -296,14 +333,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     )}
 
                     {activeTab === 'posts' && (
-                        <AdminTable headers={['Tác giả', 'Nội dung', 'Like/BL', '']}>
+                        <AdminTable headers={['Tác giả', 'Nội dung', 'Like/BL', 'Trạng thái', '']}>
                             {posts.map((item) => (
                                 <tr key={item.id} className="border-b border-slate-100">
                                     <td className="py-2 px-2 text-slate-600">{item.author?.name}</td>
                                     <td className="py-2 px-2 text-slate-800 max-w-[420px] line-clamp-2">{item.content}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.likes}/{item.comments}</td>
+                                    <td className="py-2 px-2 text-slate-600">{item.deletedAt ? 'Đã xóa mềm' : 'Đang hiển thị'}</td>
                                     <td className="py-2 px-2 text-right">
-                                        <button onClick={() => void handleDelete('posts', item.id)} title="Xóa bài viết" aria-label="Xóa bài viết" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        {item.deletedAt ? (
+                                            <button onClick={() => void handleRestore('posts', item.id)} title="Khôi phục bài viết" aria-label="Khôi phục bài viết" className="text-emerald-600 hover:text-emerald-700"><RotateCcw size={16} /></button>
+                                        ) : (
+                                            <button onClick={() => void handleDelete('posts', item.id)} title="Xóa bài viết" aria-label="Xóa bài viết" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -311,15 +353,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     )}
 
                     {activeTab === 'events' && (
-                        <AdminTable headers={['Sự kiện', 'Địa điểm', 'Organizer', 'Người tham gia', '']}>
+                        <AdminTable headers={['Sự kiện', 'Địa điểm', 'Organizer', 'Người tham gia', 'Trạng thái', '']}>
                             {events.map((item) => (
                                 <tr key={item.id} className="border-b border-slate-100">
                                     <td className="py-2 px-2 text-slate-800">{item.title}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.location}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.organizer || '-'}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.attendees}</td>
+                                    <td className="py-2 px-2 text-slate-600">{item.deletedAt ? 'Đã xóa mềm' : 'Đang hiển thị'}</td>
                                     <td className="py-2 px-2 text-right">
-                                        <button onClick={() => void handleDelete('events', item.id)} title="Xóa sự kiện" aria-label="Xóa sự kiện" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        {item.deletedAt ? (
+                                            <button onClick={() => void handleRestore('events', item.id)} title="Khôi phục sự kiện" aria-label="Khôi phục sự kiện" className="text-emerald-600 hover:text-emerald-700"><RotateCcw size={16} /></button>
+                                        ) : (
+                                            <button onClick={() => void handleDelete('events', item.id)} title="Xóa sự kiện" aria-label="Xóa sự kiện" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -327,15 +374,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     )}
 
                     {activeTab === 'pollution' && (
-                        <AdminTable headers={['Loại', 'Mức độ', 'Mô tả', 'Ẩn danh', '']}>
+                        <AdminTable headers={['Loại', 'Mức độ', 'Mô tả', 'Ẩn danh', 'Trạng thái', '']}>
                             {reports.map((item) => (
                                 <tr key={item.id} className="border-b border-slate-100">
                                     <td className="py-2 px-2 text-slate-800">{item.type}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.severity}/5</td>
                                     <td className="py-2 px-2 text-slate-800 max-w-[420px] line-clamp-2">{item.description}</td>
                                     <td className="py-2 px-2 text-slate-600">{item.isAnonymous ? 'Có' : 'Không'}</td>
+                                    <td className="py-2 px-2 text-slate-600">{item.deletedAt ? 'Đã xóa mềm' : 'Đang hiển thị'}</td>
                                     <td className="py-2 px-2 text-right">
-                                        <button onClick={() => void handleDelete('pollution', item.id)} title="Xóa báo cáo ô nhiễm" aria-label="Xóa báo cáo ô nhiễm" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        {item.deletedAt ? (
+                                            <button onClick={() => void handleRestore('pollution', item.id)} title="Khôi phục báo cáo ô nhiễm" aria-label="Khôi phục báo cáo ô nhiễm" className="text-emerald-600 hover:text-emerald-700"><RotateCcw size={16} /></button>
+                                        ) : (
+                                            <button onClick={() => void handleDelete('pollution', item.id)} title="Xóa báo cáo ô nhiễm" aria-label="Xóa báo cáo ô nhiễm" className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
