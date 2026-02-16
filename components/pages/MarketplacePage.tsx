@@ -177,10 +177,10 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
         navigator.geolocation.getCurrentPosition(resolve, reject, options);
       });
 
-    getPosition({ enableHighAccuracy: true, timeout: 7000, maximumAge: 0 })
+    getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 5 * 60 * 1000 })
       .catch(async (error: GeolocationPositionError) => {
         if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
-          return getPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 });
+          return getPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
         }
         throw error;
       })
