@@ -274,7 +274,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 value={maxDistanceKm}
                 onChange={(e) => setMaxDistanceKm(e.target.value)}
               >
-                <option value="">Khoảng cách</option>
+                <option value="">Mọi nơi</option>
                 <option value="5">Trong 5 km</option>
                 <option value="10">Trong 10 km</option>
                 <option value="20">Trong 20 km</option>
