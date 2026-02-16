@@ -255,86 +255,6 @@ export const HomePage = ({
         </div>
       </section>
 
-      {/* Personalized recommendations */}
-      {user && recommendations && (
-        <section className="py-10 bg-white border-y border-slate-100">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
-              <div>
-                <h3 className="text-2xl font-bold text-slate-900">Gợi ý cho bạn</h3>
-                <p className="text-sm text-slate-500">Cá nhân hóa theo thói quen tiêu dùng và hoạt động cộng đồng của bạn.</p>
-              </div>
-              {recommendationHints.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {recommendationHints.map((hint) => (
-                    <span key={hint} className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                      {hint}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900 mb-3">Sản phẩm gợi ý</div>
-                <div className="space-y-3">
-                  {recommendations.products.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('product', item.id)}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
-                      <div className="text-xs text-slate-500 mt-1">{item.location} • {item.category}</div>
-                      <div className="text-sm font-semibold text-emerald-700 mt-1">{formatPrice(item.price)}</div>
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900 mb-3">Thảo luận nên đọc</div>
-                <div className="space-y-3">
-                  {recommendations.discussions.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('community')}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="text-xs text-slate-500">{item.user_name}</div>
-                      <div className="text-sm text-slate-900 mt-1 line-clamp-2">{item.content}</div>
-                      {item.tags.length > 0 && (
-                        <div className="text-xs text-emerald-700 mt-1 line-clamp-1">{item.tags.slice(0, 2).join(' • ')}</div>
-                      )}
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900 mb-3">Sự kiện/Workshop phù hợp</div>
-                <div className="space-y-3">
-                  {recommendations.events.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => onNavigate('community')}
-                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
-                    >
-                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
-                      <div className="text-xs text-slate-500 mt-1">{new Date(item.start_at).toLocaleDateString('vi-VN')} • {item.location}</div>
-                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Realtime Stats */}
       <section className="bg-white border-y border-slate-100 py-12 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-emerald-50/50 via-transparent to-teal-50/50" />
@@ -452,6 +372,86 @@ export const HomePage = ({
           </motion.div>
         </div>
       </section>
+
+      {/* Personalized recommendations */}
+      {user && recommendations && (
+        <section className="py-10 bg-white border-y border-slate-100">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900">Gợi ý cho bạn</h3>
+                <p className="text-sm text-slate-500">Cá nhân hóa theo thói quen tiêu dùng và hoạt động cộng đồng của bạn.</p>
+              </div>
+              {recommendationHints.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {recommendationHints.map((hint) => (
+                    <span key={hint} className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                      {hint}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-semibold text-slate-900 mb-3">Sản phẩm gợi ý</div>
+                <div className="space-y-3">
+                  {recommendations.products.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate('product', item.id)}
+                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                    >
+                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
+                      <div className="text-xs text-slate-500 mt-1">{item.location} • {item.category}</div>
+                      <div className="text-sm font-semibold text-emerald-700 mt-1">{formatPrice(item.price)}</div>
+                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-semibold text-slate-900 mb-3">Thảo luận nên đọc</div>
+                <div className="space-y-3">
+                  {recommendations.discussions.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate('community')}
+                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                    >
+                      <div className="text-xs text-slate-500">{item.user_name}</div>
+                      <div className="text-sm text-slate-900 mt-1 line-clamp-2">{item.content}</div>
+                      {item.tags.length > 0 && (
+                        <div className="text-xs text-emerald-700 mt-1 line-clamp-1">{item.tags.slice(0, 2).join(' • ')}</div>
+                      )}
+                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="font-semibold text-slate-900 mb-3">Sự kiện/Workshop phù hợp</div>
+                <div className="space-y-3">
+                  {recommendations.events.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate('community')}
+                      className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
+                    >
+                      <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
+                      <div className="text-xs text-slate-500 mt-1">{new Date(item.start_at).toLocaleDateString('vi-VN')} • {item.location}</div>
+                      <div className="text-xs text-slate-500 mt-1 line-clamp-1">{item.reason}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Call to Action */}
       <section className="py-20 bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 relative overflow-hidden">
