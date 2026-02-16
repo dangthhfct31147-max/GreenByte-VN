@@ -43,6 +43,10 @@ postsRouter.get('/posts/trending-topics', async (req, res, next) => {
             .parse(req.query);
 
         const rows = await (prisma as any).post.findMany({
+            where: {
+                deletedAt: null,
+                moderationStatus: 'APPROVED',
+            },
             select: { tags: true },
             orderBy: { createdAt: 'desc' },
             take: query.sourcePosts ?? 2000,
@@ -108,7 +112,10 @@ postsRouter.get('/posts', optionalAuth, async (req: AuthenticatedRequest, res, n
         const userId = req.user?.id;
 
         const rows = await (prisma as any).post.findMany({
-            where: { deletedAt: null },
+            where: {
+                deletedAt: null,
+                moderationStatus: 'APPROVED',
+            },
             orderBy: { createdAt: 'desc' },
             take: query.take ?? 50,
             include: {
@@ -154,6 +161,7 @@ postsRouter.post('/posts', requireAuth, async (req: AuthenticatedRequest, res, n
                 imageUrl: body.image,
                 tags: JSON.stringify(body.tags ?? []),
                 likeCount: 0,
+                moderationStatus: 'PENDING',
             },
             include: { author: { select: { name: true } } },
         });
@@ -191,7 +199,7 @@ postsRouter.post('/posts/:id/like', requireAuth, async (req: AuthenticatedReques
         // idempotent like: create like row if missing
         await (prisma as any).$transaction(async (tx: any) => {
             const post = await tx.post.findFirst({
-                where: { id: postId, deletedAt: null },
+                where: { id: postId, deletedAt: null, moderationStatus: 'APPROVED' },
                 select: { id: true },
             });
             if (!post) return;
@@ -234,7 +242,7 @@ postsRouter.delete('/posts/:id/like', requireAuth, async (req: AuthenticatedRequ
 
         await (prisma as any).$transaction(async (tx: any) => {
             const post = await tx.post.findFirst({
-                where: { id: postId, deletedAt: null },
+                where: { id: postId, deletedAt: null, moderationStatus: 'APPROVED' },
                 select: { id: true },
             });
             if (!post) return;
@@ -279,7 +287,7 @@ postsRouter.get('/posts/:id/comments', optionalAuth, async (req: AuthenticatedRe
             .parse(req.query);
 
         const post = await (prisma as any).post.findFirst({
-            where: { id: postId, deletedAt: null },
+            where: { id: postId, deletedAt: null, moderationStatus: 'APPROVED' },
             select: { id: true },
         });
         if (!post) return res.status(404).json({ error: 'Bài viết không tồn tại' });
@@ -320,7 +328,7 @@ postsRouter.post('/posts/:id/comments', requireAuth, async (req: AuthenticatedRe
         const body = CreateCommentSchema.parse(req.body);
 
         const existingPost = await (prisma as any).post.findFirst({
-            where: { id: postId, deletedAt: null },
+            where: { id: postId, deletedAt: null, moderationStatus: 'APPROVED' },
             select: { id: true },
         });
 

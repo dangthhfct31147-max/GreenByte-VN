@@ -13,11 +13,14 @@ import {
     LogOut,
     Home,
     Search,
+    Check,
+    X,
+    Shield,
 } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import { getAdminToken } from '@/utils/adminAuth';
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'posts' | 'events' | 'pollution' | 'future';
+type AdminTab = 'dashboard' | 'users' | 'moderation' | 'products' | 'posts' | 'events' | 'pollution' | 'future';
 
 interface AdminPageProps {
     adminEmail: string;
@@ -43,6 +46,7 @@ interface DashboardData {
 const TABS: Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
     { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { id: 'users', label: 'Người dùng', icon: Users },
+    { id: 'moderation', label: 'Kiểm duyệt', icon: Shield },
     { id: 'products', label: 'Sản phẩm', icon: ShoppingBag },
     { id: 'posts', label: 'Bài viết', icon: MessageSquare },
     { id: 'events', label: 'Sự kiện', icon: CalendarDays },
@@ -76,6 +80,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     const [posts, setPosts] = useState<any[]>([]);
     const [events, setEvents] = useState<any[]>([]);
     const [reports, setReports] = useState<any[]>([]);
+    const [moderationQueue, setModerationQueue] = useState<any[]>([]);
 
     const loadData = useCallback(async (tab: AdminTab, query = '', includeSoftDeleted = false) => {
         setLoading(true);
@@ -98,6 +103,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                 const data = await res.json();
                 if (!res.ok) throw new Error(data?.error ?? 'Không thể tải danh sách người dùng');
                 setUsers(Array.isArray(data?.users) ? data.users : []);
+                return;
+            }
+
+            if (tab === 'moderation') {
+                const res = await adminFetch(`moderation/queue?take=200${searchSuffix}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.error ?? 'Không thể tải hàng chờ kiểm duyệt');
+                setModerationQueue(Array.isArray(data?.queue) ? data.queue : []);
                 return;
             }
 
@@ -179,6 +192,47 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             await loadData(activeTab, search, includeDeleted);
         } catch (e: any) {
             alert(e?.message ?? 'Có lỗi xảy ra khi khôi phục');
+        }
+    };
+
+    const handleUserAction = async (
+        userId: string,
+        action: 'lock' | 'unlock' | 'reset-2fa' | 'seller-verify',
+        body?: Record<string, unknown>
+    ) => {
+        try {
+            const res = await adminFetch(`users/${userId}/${action}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body ?? {}),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data?.error ?? 'Không thể thực hiện thao tác người dùng');
+            }
+            await loadData('users', search, includeDeleted);
+        } catch (e: any) {
+            alert(e?.message ?? 'Có lỗi khi thao tác người dùng');
+        }
+    };
+
+    const handleModerationDecision = async (
+        item: { resource: 'posts' | 'events' | 'pollution'; id: string },
+        decision: 'approve' | 'reject'
+    ) => {
+        try {
+            const res = await adminFetch(`moderation/${item.resource}/${item.id}/${decision}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok && res.status !== 204) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data?.error ?? 'Không thể xử lý kiểm duyệt');
+            }
+            await loadData('moderation', search, includeDeleted);
+        } catch (e: any) {
+            alert(e?.message ?? 'Có lỗi khi xử lý kiểm duyệt');
         }
     };
 
@@ -299,13 +353,65 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                     )}
 
                     {activeTab === 'users' && (
-                        <AdminTable headers={['Tên', 'Email', '2FA', 'Trạng thái']}>
+                        <AdminTable headers={['Tên', 'Email', '2FA', 'Seller', 'Trạng thái', '']}>
                             {users.map((u) => (
                                 <tr key={u.id} className="border-b border-slate-100">
                                     <td className="py-2 px-2 text-slate-800">{u.name}</td>
                                     <td className="py-2 px-2 text-slate-600">{u.email}</td>
                                     <td className="py-2 px-2 text-slate-600">{u.totpEnabled ? 'Bật' : 'Tắt'}</td>
+                                    <td className="py-2 px-2 text-slate-600">{u.sellerVerified ? 'Đã xác minh' : 'Chưa xác minh'}</td>
                                     <td className="py-2 px-2 text-slate-600">{u.lockedUntil ? 'Đang khóa' : 'Hoạt động'}</td>
+                                    <td className="py-2 px-2 text-right">
+                                        <div className="inline-flex items-center gap-2">
+                                            {u.lockedUntil ? (
+                                                <button onClick={() => void handleUserAction(u.id, 'unlock')} title="Mở khóa" aria-label="Mở khóa" className="text-emerald-600 hover:text-emerald-700"><RotateCcw size={16} /></button>
+                                            ) : (
+                                                <button onClick={() => void handleUserAction(u.id, 'lock', { minutes: 60 })} title="Khóa 60 phút" aria-label="Khóa 60 phút" className="text-amber-600 hover:text-amber-700"><Shield size={16} /></button>
+                                            )}
+                                            <button onClick={() => void handleUserAction(u.id, 'reset-2fa')} title="Reset 2FA" aria-label="Reset 2FA" className="text-slate-600 hover:text-slate-700"><X size={16} /></button>
+                                            <button
+                                                onClick={() => void handleUserAction(u.id, 'seller-verify', { verified: !u.sellerVerified })}
+                                                title={u.sellerVerified ? 'Gỡ xác minh seller' : 'Xác minh seller'}
+                                                aria-label={u.sellerVerified ? 'Gỡ xác minh seller' : 'Xác minh seller'}
+                                                className={u.sellerVerified ? 'text-slate-600 hover:text-slate-700' : 'text-emerald-600 hover:text-emerald-700'}
+                                            >
+                                                <Check size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </AdminTable>
+                    )}
+
+                    {activeTab === 'moderation' && (
+                        <AdminTable headers={['Loại', 'Nội dung', 'Tác giả/Nguồn', 'Tạo lúc', '']}>
+                            {moderationQueue.map((item) => (
+                                <tr key={`${item.resource}-${item.id}`} className="border-b border-slate-100">
+                                    <td className="py-2 px-2 text-slate-700 uppercase text-xs">{item.resource}</td>
+                                    <td className="py-2 px-2 text-slate-800 max-w-[420px] line-clamp-2">{item.title}</td>
+                                    <td className="py-2 px-2 text-slate-600 max-w-[240px] line-clamp-1">{item.subtitle}</td>
+                                    <td className="py-2 px-2 text-slate-600">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
+                                    <td className="py-2 px-2 text-right">
+                                        <div className="inline-flex items-center gap-2">
+                                            <button
+                                                onClick={() => void handleModerationDecision(item, 'approve')}
+                                                title="Duyệt"
+                                                aria-label="Duyệt"
+                                                className="text-emerald-600 hover:text-emerald-700"
+                                            >
+                                                <Check size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => void handleModerationDecision(item, 'reject')}
+                                                title="Từ chối"
+                                                aria-label="Từ chối"
+                                                className="text-red-600 hover:text-red-700"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </AdminTable>

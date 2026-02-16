@@ -20,7 +20,10 @@ function humanizeFromDate(date: Date): string {
 pollutionRouter.get('/pollution', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
         const rows = await (prisma as any).pollutionReport.findMany({
-            where: { deletedAt: null },
+            where: {
+                deletedAt: null,
+                moderationStatus: 'APPROVED',
+            },
             orderBy: { createdAt: 'desc' },
             take: 500,
             include: { owner: { select: { name: true } } },
@@ -68,6 +71,7 @@ pollutionRouter.post('/pollution', requireAuth, async (req: AuthenticatedRequest
                 severity: body.severity,
                 description: body.description,
                 isAnonymous: body.is_anonymous,
+                moderationStatus: 'PENDING',
             },
             include: { owner: { select: { name: true } } },
         });

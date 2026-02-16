@@ -6,13 +6,14 @@ export type AdminRole = 'superadmin' | 'moderator' | 'analyst';
 export type AdminPermission =
     | 'dashboard:read'
     | 'users:read'
+    | 'users:manage'
     | 'content:read'
     | 'content:moderate'
     | 'audit:read';
 
 const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
-    superadmin: ['dashboard:read', 'users:read', 'content:read', 'content:moderate', 'audit:read'],
-    moderator: ['dashboard:read', 'users:read', 'content:read', 'content:moderate'],
+    superadmin: ['dashboard:read', 'users:read', 'users:manage', 'content:read', 'content:moderate', 'audit:read'],
+    moderator: ['dashboard:read', 'users:read', 'users:manage', 'content:read', 'content:moderate'],
     analyst: ['dashboard:read', 'users:read', 'content:read', 'audit:read'],
 };
 

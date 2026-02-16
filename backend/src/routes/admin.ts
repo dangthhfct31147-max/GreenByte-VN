@@ -33,6 +33,20 @@ const AuditQuerySchema = z.object({
     adminEmail: z.string().email().optional(),
 });
 
+const ModerationQueueQuerySchema = z.object({
+    take: z.coerce.number().int().min(1).max(200).optional(),
+    search: z.string().optional(),
+    resource: z.enum(['posts', 'events', 'pollution']).optional(),
+});
+
+const ModerateDecisionSchema = z.object({
+    reason: z.string().max(500).optional(),
+});
+
+const UserLockSchema = z.object({
+    minutes: z.coerce.number().int().min(1).max(7 * 24 * 60).optional(),
+});
+
 const ADMIN_LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ADMIN_LOGIN_MAX_ATTEMPTS = 10;
 const adminLoginAttempts = new Map<string, { count: number; firstAttemptAt: number }>();
@@ -266,6 +280,7 @@ adminRouter.get('/users', requireAdmin, requireAdminPermission('users:read'), as
                 email: true,
                 name: true,
                 totpEnabled: true,
+                sellerVerified: true,
                 lockedUntil: true,
                 lastLoginAt: true,
                 createdAt: true,
@@ -273,6 +288,109 @@ adminRouter.get('/users', requireAdmin, requireAdminPermission('users:read'), as
         });
 
         res.json({ users });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/users/:id/lock', requireAdmin, requireAdminPermission('users:manage'), async (req: AdminRequest, res, next) => {
+    try {
+        const userId = z.string().uuid().parse(req.params.id);
+        const body = UserLockSchema.parse(req.body ?? {});
+        const lockMinutes = body.minutes ?? 60;
+        const lockedUntil = new Date(Date.now() + lockMinutes * 60 * 1000);
+
+        const updated = await (prisma as any).user.update({
+            where: { id: userId },
+            data: { lockedUntil },
+            select: { id: true, lockedUntil: true },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: 'users.lock',
+            resource: 'user',
+            resourceId: userId,
+            status: 'success',
+            metadata: { minutes: lockMinutes },
+        }).catch(() => undefined);
+
+        res.json({ user: updated });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/users/:id/unlock', requireAdmin, requireAdminPermission('users:manage'), async (req: AdminRequest, res, next) => {
+    try {
+        const userId = z.string().uuid().parse(req.params.id);
+        const updated = await (prisma as any).user.update({
+            where: { id: userId },
+            data: { lockedUntil: null },
+            select: { id: true, lockedUntil: true },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: 'users.unlock',
+            resource: 'user',
+            resourceId: userId,
+            status: 'success',
+        }).catch(() => undefined);
+
+        res.json({ user: updated });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/users/:id/reset-2fa', requireAdmin, requireAdminPermission('users:manage'), async (req: AdminRequest, res, next) => {
+    try {
+        const userId = z.string().uuid().parse(req.params.id);
+        const updated = await (prisma as any).user.update({
+            where: { id: userId },
+            data: { totpEnabled: false, totpSecret: null },
+            select: { id: true, totpEnabled: true },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: 'users.reset_2fa',
+            resource: 'user',
+            resourceId: userId,
+            status: 'success',
+        }).catch(() => undefined);
+
+        res.json({ user: updated });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/users/:id/seller-verify', requireAdmin, requireAdminPermission('users:manage'), async (req: AdminRequest, res, next) => {
+    try {
+        const userId = z.string().uuid().parse(req.params.id);
+        const body = z.object({ verified: z.boolean() }).parse(req.body ?? {});
+
+        const updated = await (prisma as any).user.update({
+            where: { id: userId },
+            data: { sellerVerified: body.verified },
+            select: { id: true, sellerVerified: true },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: body.verified ? 'users.seller_verify' : 'users.seller_unverify',
+            resource: 'user',
+            resourceId: userId,
+            status: 'success',
+        }).catch(() => undefined);
+
+        res.json({ user: updated });
     } catch (err) {
         next(err);
     }
@@ -397,6 +515,9 @@ adminRouter.get('/posts', requireAdmin, requireAdminPermission('content:read'), 
                 comments: post._count?.comments ?? 0,
                 createdAt: post.createdAt,
                 deletedAt: post.deletedAt,
+                moderationStatus: post.moderationStatus,
+                moderatedAt: post.moderatedAt,
+                moderatedBy: post.moderatedBy,
             })),
         });
     } catch (err) {
@@ -485,6 +606,9 @@ adminRouter.get('/events', requireAdmin, requireAdminPermission('content:read'),
                 attendees: event._count?.rsvps ?? 0,
                 createdAt: event.createdAt,
                 deletedAt: event.deletedAt,
+                moderationStatus: event.moderationStatus,
+                moderatedAt: event.moderatedAt,
+                moderatedBy: event.moderatedBy,
             })),
         });
     } catch (err) {
@@ -572,6 +696,9 @@ adminRouter.get('/pollution', requireAdmin, requireAdminPermission('content:read
                 owner: report.owner,
                 createdAt: report.createdAt,
                 deletedAt: report.deletedAt,
+                moderationStatus: report.moderationStatus,
+                moderatedAt: report.moderatedAt,
+                moderatedBy: report.moderatedBy,
             })),
         });
     } catch (err) {
@@ -620,6 +747,177 @@ adminRouter.patch('/pollution/:id/restore', requireAdmin, requireAdminPermission
             resource: 'pollution_report',
             resourceId: reportId,
             status: 'success',
+        }).catch(() => undefined);
+
+        res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/moderation/queue', requireAdmin, requireAdminPermission('content:read'), async (req, res, next) => {
+    try {
+        const query = ModerationQueueQuerySchema.parse(req.query);
+        const take = query.take ?? 120;
+        const resources = query.resource ? [query.resource] : ['posts', 'events', 'pollution'];
+        const search = query.search?.trim();
+
+        const [posts, events, reports] = await Promise.all([
+            resources.includes('posts')
+                ? (prisma as any).post.findMany({
+                    where: {
+                        deletedAt: null,
+                        moderationStatus: 'PENDING',
+                        ...(search
+                            ? {
+                                OR: [
+                                    { content: { contains: search, mode: 'insensitive' } },
+                                    { author: { name: { contains: search, mode: 'insensitive' } } },
+                                ],
+                            }
+                            : {}),
+                    },
+                    include: { author: { select: { name: true, email: true } } },
+                    orderBy: { createdAt: 'desc' },
+                    take,
+                })
+                : Promise.resolve([]),
+            resources.includes('events')
+                ? (prisma as any).event.findMany({
+                    where: {
+                        deletedAt: null,
+                        moderationStatus: 'PENDING',
+                        ...(search
+                            ? {
+                                OR: [
+                                    { title: { contains: search, mode: 'insensitive' } },
+                                    { location: { contains: search, mode: 'insensitive' } },
+                                    { organizer: { contains: search, mode: 'insensitive' } },
+                                ],
+                            }
+                            : {}),
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    take,
+                })
+                : Promise.resolve([]),
+            resources.includes('pollution')
+                ? (prisma as any).pollutionReport.findMany({
+                    where: {
+                        deletedAt: null,
+                        moderationStatus: 'PENDING',
+                        ...(search
+                            ? {
+                                OR: [
+                                    { description: { contains: search, mode: 'insensitive' } },
+                                    { type: { contains: search, mode: 'insensitive' } },
+                                ],
+                            }
+                            : {}),
+                    },
+                    include: { owner: { select: { name: true, email: true } } },
+                    orderBy: { createdAt: 'desc' },
+                    take,
+                })
+                : Promise.resolve([]),
+        ]);
+
+        const queue = [
+            ...posts.map((post: any) => ({
+                id: post.id,
+                resource: 'posts',
+                title: post.content,
+                subtitle: post.author?.name || post.author?.email || 'Unknown author',
+                createdAt: post.createdAt,
+            })),
+            ...events.map((event: any) => ({
+                id: event.id,
+                resource: 'events',
+                title: event.title,
+                subtitle: event.organizer || event.location || 'Unknown organizer',
+                createdAt: event.createdAt,
+            })),
+            ...reports.map((report: any) => ({
+                id: report.id,
+                resource: 'pollution',
+                title: `${report.type} (mức ${report.severity}/5)`,
+                subtitle: report.description,
+                createdAt: report.createdAt,
+            })),
+        ]
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .slice(0, take);
+
+        res.json({ queue });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/moderation/:resource/:id/approve', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
+    try {
+        const resource = z.enum(['posts', 'events', 'pollution']).parse(req.params.resource);
+        const resourceId = z.string().uuid().parse(req.params.id);
+        const body = ModerateDecisionSchema.parse(req.body ?? {});
+        const moderationData = {
+            moderationStatus: 'APPROVED',
+            moderatedAt: new Date(),
+            moderatedBy: req.admin!.email,
+            deletedAt: null,
+        };
+
+        if (resource === 'posts') {
+            await (prisma as any).post.update({ where: { id: resourceId }, data: moderationData });
+        } else if (resource === 'events') {
+            await (prisma as any).event.update({ where: { id: resourceId }, data: moderationData });
+        } else {
+            await (prisma as any).pollutionReport.update({ where: { id: resourceId }, data: moderationData });
+        }
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: `moderation.${resource}.approve`,
+            resource,
+            resourceId,
+            status: 'success',
+            message: body.reason,
+        }).catch(() => undefined);
+
+        res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/moderation/:resource/:id/reject', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
+    try {
+        const resource = z.enum(['posts', 'events', 'pollution']).parse(req.params.resource);
+        const resourceId = z.string().uuid().parse(req.params.id);
+        const body = ModerateDecisionSchema.parse(req.body ?? {});
+        const moderationData = {
+            moderationStatus: 'REJECTED',
+            moderatedAt: new Date(),
+            moderatedBy: req.admin!.email,
+            deletedAt: new Date(),
+        };
+
+        if (resource === 'posts') {
+            await (prisma as any).post.update({ where: { id: resourceId }, data: moderationData });
+        } else if (resource === 'events') {
+            await (prisma as any).event.update({ where: { id: resourceId }, data: moderationData });
+        } else {
+            await (prisma as any).pollutionReport.update({ where: { id: resourceId }, data: moderationData });
+        }
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: `moderation.${resource}.reject`,
+            resource,
+            resourceId,
+            status: 'success',
+            message: body.reason,
         }).catch(() => undefined);
 
         res.status(204).end();

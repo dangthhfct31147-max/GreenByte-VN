@@ -31,7 +31,10 @@ eventsRouter.get('/events', optionalAuth, async (req: AuthenticatedRequest, res,
         const userId = req.user?.id;
 
         const rows = await (prisma as any).event.findMany({
-            where: { deletedAt: null },
+            where: {
+                deletedAt: null,
+                moderationStatus: 'APPROVED',
+            },
             orderBy: { startAt: 'asc' },
             take: query.take ?? 50,
             include: {
@@ -98,6 +101,7 @@ eventsRouter.post('/events', requireAuth, async (req: AuthenticatedRequest, res,
                 imageUrl: body.image,
                 description: body.description,
                 organizer: body.organizer,
+                moderationStatus: 'PENDING',
             },
             include: { _count: { select: { rsvps: true } } },
         });
@@ -130,7 +134,7 @@ eventsRouter.post('/events/:id/rsvp', requireAuth, async (req: AuthenticatedRequ
         const eventId = z.string().uuid().parse(req.params.id);
 
         const event = await (prisma as any).event.findFirst({
-            where: { id: eventId, deletedAt: null },
+            where: { id: eventId, deletedAt: null, moderationStatus: 'APPROVED' },
             select: { id: true },
         });
 
@@ -156,7 +160,7 @@ eventsRouter.delete('/events/:id/rsvp', requireAuth, async (req: AuthenticatedRe
         const eventId = z.string().uuid().parse(req.params.id);
 
         const event = await (prisma as any).event.findFirst({
-            where: { id: eventId, deletedAt: null },
+            where: { id: eventId, deletedAt: null, moderationStatus: 'APPROVED' },
             select: { id: true },
         });
         if (!event) return res.status(404).json({ error: 'Sự kiện không tồn tại' });
