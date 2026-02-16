@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Search,
   Filter,
@@ -144,16 +144,18 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
     return () => controller.abort();
   }, []);
 
-  const filteredProducts =
-    maxDistanceKm === 'over_50' && userLocation
-      ? products.filter((product) => typeof product.distance_km === 'number' && product.distance_km > 50)
-      : products;
+  const filteredProducts = useMemo(() => {
+    if (maxDistanceKm === 'over_50' && userLocation) {
+      return products.filter((product) => typeof product.distance_km === 'number' && product.distance_km > 50);
+    }
+    return products;
+  }, [maxDistanceKm, products, userLocation]);
 
   // Pagination Logic
-  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+  const totalPages = useMemo(() => Math.ceil(filteredProducts.length / ITEMS_PER_PAGE), [filteredProducts.length]);
+  const paginatedProducts = useMemo(
+    () => filteredProducts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE),
+    [filteredProducts, currentPage]
   );
 
   useEffect(() => {
@@ -209,14 +211,29 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
       });
   };
 
-  const handleCreateListing = (newProduct: Product) => {
-    setProducts([newProduct, ...products]);
+  const handleCreateListing = useCallback((newProduct: Product) => {
+    setProducts((prev) => [newProduct, ...prev]);
     setIsCreateModalOpen(false);
-  };
+  }, []);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-  };
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }),
+    []
+  );
+
+  const handleViewProduct = useCallback(
+    (productId: string) => {
+      onViewProduct(productId);
+    },
+    [onViewProduct]
+  );
+
+  const handleAddToCart = useCallback(
+    (product: Product) => {
+      addToCart(product);
+    },
+    [addToCart]
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 select-none">
@@ -377,9 +394,9 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
                 <ProductCard
                   key={product.id}
                   product={product}
-                  formatCurrency={formatCurrency}
-                  onAddToCart={() => addToCart(product)}
-                  onViewProduct={() => onViewProduct(product.id)}
+                  currencyFormatter={currencyFormatter}
+                  onAddToCart={handleAddToCart}
+                  onViewProduct={handleViewProduct}
                 />
               ))}
             </div>
@@ -430,14 +447,16 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
 
 // --- Sub-components ---
 
-const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => string, onAddToCart: () => void, onViewProduct: () => void }> = ({ product, formatCurrency, onAddToCart, onViewProduct }) => {
+const ProductCard: React.FC<{
+  product: Product;
+  currencyFormatter: Intl.NumberFormat;
+  onAddToCart: (product: Product) => void;
+  onViewProduct: (productId: string) => void;
+}> = React.memo(({ product, currencyFormatter, onAddToCart, onViewProduct }) => {
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 flex flex-col h-full cursor-pointer"
-      onClick={onViewProduct}
+      onClick={() => onViewProduct(product.id)}
     >
       {/* Image */}
       <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
@@ -464,7 +483,7 @@ const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => s
         </h3>
 
         <div className="flex items-baseline gap-1 text-emerald-600 font-bold text-lg mb-2">
-          {formatCurrency(product.price)}
+          {currencyFormatter.format(product.price)}
           <span className="text-xs font-medium text-slate-500">/{product.unit}</span>
         </div>
 
@@ -502,7 +521,7 @@ const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => s
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onAddToCart();
+              onAddToCart(product);
             }}
             className="p-2 rounded-full bg-slate-50 text-slate-600 hover:bg-emerald-500 hover:text-white transition-colors"
             title="Thêm vào giỏ"
@@ -511,9 +530,11 @@ const ProductCard: React.FC<{ product: Product, formatCurrency: (v: number) => s
           </button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
-};
+});
+
+ProductCard.displayName = 'ProductCard';
 
 const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSubmit: (p: Product) => void, user: any }> = ({ isOpen, onClose, onSubmit, user }) => {
   const [loading, setLoading] = useState(false);
