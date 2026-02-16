@@ -222,6 +222,69 @@ const SAMPLE_DISCUSSION_POSTS = [
     },
 ];
 
+const SAMPLE_EVENTS = [
+    {
+        title: 'Workshop Ủ phân hữu cơ từ bã mía và rơm rạ',
+        startInDays: 3,
+        durationHours: 3,
+        location: 'Cần Thơ',
+        imageUrl: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=1200',
+        description: 'Hướng dẫn quy trình ủ compost quy mô hộ gia đình, kiểm soát nhiệt độ và độ ẩm, thực hành phối trộn nguyên liệu tại chỗ.',
+        organizer: 'Trung tâm Khuyến nông Cần Thơ',
+        rsvpEmails: ['nongdan.an@eco.vn', 'kysu.linh@eco.vn', 'hoptacxa.hoa@eco.vn', 'nongsinhthai.khanh@eco.vn'],
+    },
+    {
+        title: 'Kết nối cung cầu phụ phẩm nông nghiệp miền Tây',
+        startInDays: 6,
+        durationHours: 4,
+        location: 'An Giang',
+        imageUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=1200',
+        description: 'Phiên kết nối trực tiếp giữa nông hộ, hợp tác xã và doanh nghiệp thu mua phụ phẩm để ký biên bản hợp tác đầu ra.',
+        organizer: 'Liên minh HTX An Giang',
+        rsvpEmails: ['startup.huy@eco.vn', 'hoptacxa.hoa@eco.vn', 'thucphamxanh.trang@eco.vn'],
+    },
+    {
+        title: 'Sản xuất than trấu ép viên: từ mô hình thử nghiệm đến thương mại',
+        startInDays: 10,
+        durationHours: 3,
+        location: 'Long An',
+        imageUrl: 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=1200',
+        description: 'Chia sẻ bài toán chi phí, vận hành lò ép viên và kiểm định chất lượng nhiên liệu sinh khối cho hộ sản xuất vừa và nhỏ.',
+        organizer: 'CLB Khởi nghiệp Xanh Long An',
+        rsvpEmails: ['startup.huy@eco.vn', 'nonghoc.minh@eco.vn', 'canhbao.manh@eco.vn'],
+    },
+    {
+        title: 'Tập huấn giám sát điểm đốt rơm rạ bằng bản đồ cộng đồng',
+        startInDays: 14,
+        durationHours: 2,
+        location: 'Hồ Chí Minh',
+        imageUrl: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=1200',
+        description: 'Hướng dẫn cộng tác viên ghi nhận, xác minh và gửi báo cáo ô nhiễm không khí từ điểm đốt rơm rạ theo thời gian thực.',
+        organizer: 'Mạng lưới Không khí sạch Việt Nam',
+        rsvpEmails: ['canhbao.manh@eco.vn', 'kysu.linh@eco.vn', 'nongdan.an@eco.vn'],
+    },
+    {
+        title: 'Workshop thiết kế chuỗi giá trị phụ phẩm cho HTX',
+        startInDays: 21,
+        durationHours: 4,
+        location: 'Đồng Nai',
+        imageUrl: 'https://images.unsplash.com/photo-1492496913980-501348b61469?w=1200',
+        description: 'Xây dựng mô hình thu gom - sơ chế - vận chuyển - tiêu thụ phụ phẩm nông nghiệp theo hướng chuẩn hóa và có truy xuất nguồn gốc.',
+        organizer: 'Viện Nông nghiệp tuần hoàn',
+        rsvpEmails: ['hoptacxa.hoa@eco.vn', 'thucphamxanh.trang@eco.vn', 'nonghoc.minh@eco.vn', 'nongsinhthai.khanh@eco.vn'],
+    },
+    {
+        title: 'Ngày hội công nghệ tái chế phụ phẩm nông nghiệp 2026',
+        startInDays: 30,
+        durationHours: 6,
+        location: 'Tây Ninh',
+        imageUrl: 'https://images.unsplash.com/photo-1462899006636-339e08d1844e?w=1200',
+        description: 'Trưng bày thiết bị, trình diễn mô hình thực tế và tư vấn triển khai công nghệ tái chế phụ phẩm phù hợp từng địa phương.',
+        organizer: 'Sở Nông nghiệp & PTNT Tây Ninh',
+        rsvpEmails: ['nongdan.an@eco.vn', 'startup.huy@eco.vn', 'kysu.linh@eco.vn', 'hoptacxa.hoa@eco.vn', 'thucphamxanh.trang@eco.vn'],
+    },
+];
+
 async function main() {
     console.log('🌱 Bắt đầu seed database...');
 
@@ -379,6 +442,50 @@ async function main() {
 
     console.log(`✅ Đã thêm ${seededCommunityUsers.length} user mẫu cộng đồng`);
     console.log(`✅ Đã thêm ${createdCommunityPostCount} bài thảo luận mẫu`);
+
+    // --- SEED EVENTS & WORKSHOPS ---
+    console.log('📅 Bắt đầu seed dữ liệu sự kiện/workshop...');
+
+    await prisma.eventRsvp.deleteMany({});
+    await prisma.event.deleteMany({});
+
+    const hourMs = 60 * 60 * 1000;
+    let createdEventCount = 0;
+    let createdRsvpCount = 0;
+
+    for (const item of SAMPLE_EVENTS) {
+        const startAt = new Date(Date.now() + item.startInDays * 24 * hourMs);
+        const endAt = new Date(startAt.getTime() + item.durationHours * hourMs);
+
+        const createdEvent = await prisma.event.create({
+            data: {
+                title: item.title,
+                startAt,
+                endAt,
+                location: item.location,
+                imageUrl: item.imageUrl,
+                description: item.description,
+                organizer: item.organizer,
+            },
+        });
+
+        const rsvpUserIds = item.rsvpEmails
+            .map((email) => communityUserByEmail.get(email)?.id)
+            .filter((id): id is string => Boolean(id));
+
+        if (rsvpUserIds.length > 0) {
+            await prisma.eventRsvp.createMany({
+                data: rsvpUserIds.map((userId) => ({ eventId: createdEvent.id, userId })),
+                skipDuplicates: true,
+            });
+            createdRsvpCount += rsvpUserIds.length;
+        }
+
+        createdEventCount++;
+    }
+
+    console.log(`✅ Đã thêm ${createdEventCount} sự kiện/workshop mẫu`);
+    console.log(`✅ Đã thêm ${createdRsvpCount} lượt đăng ký tham gia mẫu`);
 
     // --- SEED POLLUTION REPORTS ---
     console.log('🏭 Bắt đầu seed dữ liệu ô nhiễm...');
