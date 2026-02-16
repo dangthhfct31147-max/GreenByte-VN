@@ -31,6 +31,13 @@ interface Post {
   is_liked: boolean;
 }
 
+interface Comment {
+  id: string;
+  user_name: string;
+  content: string;
+  timestamp: string;
+}
+
 interface Event {
   id: string;
   title: string;
@@ -45,6 +52,20 @@ interface Event {
   is_going: boolean;
 }
 
+const FALLBACK_ACTIVE_MEMBERS = [
+  'Lê Minh An',
+  'Nguyễn Thu Linh',
+  'Trần Gia Huy',
+  'Phạm Ngọc Hoa',
+  'Đỗ Khánh Vy',
+];
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(-2).map((part) => part.charAt(0).toUpperCase()).join('');
+}
+
 // --- Component ---
 
 interface CommunityPageProps {
@@ -57,8 +78,38 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
   const [posts, setPosts] = useState<Post[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [newPostContent, setNewPostContent] = useState('');
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
+  const [postingComment, setPostingComment] = useState<Record<string, boolean>>({});
+  const [shareFeedback, setShareFeedback] = useState<Record<string, string>>({});
 
   const jsonHeaders = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
+
+  const activeMembers = useMemo(() => {
+    const contributorCounter = new Map<string, number>();
+    posts.forEach((post) => {
+      contributorCounter.set(post.user_name, (contributorCounter.get(post.user_name) ?? 0) + 1);
+    });
+
+    if (contributorCounter.size === 0) {
+      return FALLBACK_ACTIVE_MEMBERS.map((name) => ({
+        name,
+        posts: 0,
+        initials: getInitials(name),
+      }));
+    }
+
+    return [...contributorCounter.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([name, postCount]) => ({
+        name,
+        posts: postCount,
+        initials: getInitials(name),
+      }));
+  }, [posts]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -127,6 +178,89 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
       setNewPostContent('');
     } catch (e: any) {
       alert(e?.message ?? 'Có lỗi xảy ra');
+    }
+  };
+
+  const loadComments = async (postId: string) => {
+    if (loadingComments[postId]) return;
+    setLoadingComments((prev) => ({ ...prev, [postId]: true }));
+    try {
+      const res = await apiFetch(`posts/${postId}/comments`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Không thể tải bình luận');
+      const comments = Array.isArray(data?.comments) ? data.comments as Comment[] : [];
+      setCommentsByPost((prev) => ({ ...prev, [postId]: comments }));
+      setPosts((prev) => prev.map((post) => post.id === postId ? { ...post, comments: comments.length } : post));
+    } catch {
+      setCommentsByPost((prev) => ({ ...prev, [postId]: [] }));
+    } finally {
+      setLoadingComments((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const handleToggleComments = (postId: string) => {
+    const willExpand = !expandedComments[postId];
+    setExpandedComments((prev) => ({ ...prev, [postId]: willExpand }));
+    if (willExpand && commentsByPost[postId] === undefined) {
+      void loadComments(postId);
+    }
+  };
+
+  const handleCommentSubmit = async (postId: string) => {
+    if (!user) {
+      onLoginRequest();
+      return;
+    }
+
+    const content = (commentInputs[postId] ?? '').trim();
+    if (!content || postingComment[postId]) return;
+
+    setPostingComment((prev) => ({ ...prev, [postId]: true }));
+    try {
+      const res = await apiFetch(`posts/${postId}/comments`, {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Không thể gửi bình luận');
+
+      const newComment = data?.comment as Comment | undefined;
+      if (!newComment) return;
+
+      setCommentsByPost((prev) => {
+        const current = prev[postId] ?? [];
+        return { ...prev, [postId]: [...current, newComment] };
+      });
+      setPosts((prev) => prev.map((post) => post.id === postId ? { ...post, comments: post.comments + 1 } : post));
+      setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+    } catch (e: any) {
+      alert(e?.message ?? 'Có lỗi xảy ra khi gửi bình luận');
+    } finally {
+      setPostingComment((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const handleShare = async (postId: string) => {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+    const shareText = 'Xem bài đăng thảo luận nông nghiệp xanh này';
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Eco Product - Bài thảo luận', text: shareText, url: shareUrl });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+
+      setShareFeedback((prev) => ({ ...prev, [postId]: 'Đã chia sẻ' }));
+      window.setTimeout(() => {
+        setShareFeedback((prev) => ({ ...prev, [postId]: '' }));
+      }, 2000);
+    } catch {
+      setShareFeedback((prev) => ({ ...prev, [postId]: 'Không thể chia sẻ' }));
+      window.setTimeout(() => {
+        setShareFeedback((prev) => ({ ...prev, [postId]: '' }));
+      }, 2000);
     }
   };
 
@@ -214,7 +348,23 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
                 className="space-y-6"
               >
                 {posts.map(post => (
-                  <PostCard key={post.id} post={post} onLike={() => handleLike(post.id)} />
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onLike={() => handleLike(post.id)}
+                    onToggleComments={() => handleToggleComments(post.id)}
+                    comments={commentsByPost[post.id] ?? []}
+                    commentsExpanded={Boolean(expandedComments[post.id])}
+                    commentsLoading={Boolean(loadingComments[post.id])}
+                    commentValue={commentInputs[post.id] ?? ''}
+                    onCommentValueChange={(value) => setCommentInputs((prev) => ({ ...prev, [post.id]: value }))}
+                    onCommentSubmit={() => handleCommentSubmit(post.id)}
+                    commentSubmitting={Boolean(postingComment[post.id])}
+                    onShare={() => handleShare(post.id)}
+                    shareMessage={shareFeedback[post.id] ?? ''}
+                    canComment={Boolean(user)}
+                    onLoginRequest={onLoginRequest}
+                  />
                 ))}
               </motion.div>
             ) : (
@@ -263,14 +413,26 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
               Thành viên tích cực
             </h3>
             <div className="flex -space-x-2 overflow-hidden mb-4">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-xs text-slate-500 font-bold">
-                  {i}
+              {activeMembers.slice(0, 5).map((member) => (
+                <div key={member.name} className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-bold" title={member.name}>
+                  {member.initials}
                 </div>
               ))}
-              <div className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-100 flex items-center justify-center text-xs text-slate-500 font-bold">+99</div>
+              {activeMembers.length > 5 && (
+                <div className="h-8 w-8 rounded-full ring-2 ring-white bg-slate-100 flex items-center justify-center text-xs text-slate-500 font-bold">
+                  +{activeMembers.length - 5}
+                </div>
+              )}
             </div>
-            <p className="text-xs text-slate-500">Tham gia cùng hàng ngàn chuyên gia và nông dân khác.</p>
+            <div className="space-y-2">
+              {activeMembers.slice(0, 4).map((member) => (
+                <div key={`${member.name}-stat`} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600">{member.name}</span>
+                  <span className="text-slate-400">{member.posts > 0 ? `${member.posts} bài viết` : 'User mẫu'}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-4">Tham gia cùng hàng ngàn chuyên gia và nông dân khác.</p>
           </div>
 
         </div>
@@ -281,7 +443,39 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
 
 // --- Sub-components ---
 
-const PostCard: React.FC<{ post: Post, onLike: () => void }> = ({ post, onLike }) => {
+interface PostCardProps {
+  post: Post;
+  onLike: () => void;
+  onToggleComments: () => void;
+  comments: Comment[];
+  commentsExpanded: boolean;
+  commentsLoading: boolean;
+  commentValue: string;
+  onCommentValueChange: (value: string) => void;
+  onCommentSubmit: () => void;
+  commentSubmitting: boolean;
+  onShare: () => void;
+  shareMessage: string;
+  canComment: boolean;
+  onLoginRequest: () => void;
+}
+
+const PostCard: React.FC<PostCardProps> = ({
+  post,
+  onLike,
+  onToggleComments,
+  comments,
+  commentsExpanded,
+  commentsLoading,
+  commentValue,
+  onCommentValueChange,
+  onCommentSubmit,
+  commentSubmitting,
+  onShare,
+  shareMessage,
+  canComment,
+  onLoginRequest,
+}) => {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-4">
@@ -344,15 +538,65 @@ const PostCard: React.FC<{ post: Post, onLike: () => void }> = ({ post, onLike }
             <Heart size={18} fill={post.is_liked ? "currentColor" : "none"} />
             Thích
           </button>
-          <button className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+          <button
+            onClick={onToggleComments}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${commentsExpanded ? 'text-emerald-600 bg-emerald-50' : 'text-slate-600 hover:bg-slate-50'}`}
+          >
             <MessageCircle size={18} />
             Bình luận
           </button>
-          <button className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+          <button
+            onClick={onShare}
+            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          >
             <Share2 size={18} />
             Chia sẻ
           </button>
         </div>
+
+        {shareMessage && (
+          <div className="text-xs text-emerald-600 mt-2">{shareMessage}</div>
+        )}
+
+        {commentsExpanded && (
+          <div className="border-t border-slate-100 mt-3 pt-3 space-y-3">
+            {commentsLoading ? (
+              <p className="text-xs text-slate-500">Đang tải bình luận...</p>
+            ) : comments.length > 0 ? (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {comments.map((comment) => (
+                  <div key={comment.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-700">{comment.user_name}</span>
+                      <span className="text-[11px] text-slate-400">{comment.timestamp}</span>
+                    </div>
+                    <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Chưa có bình luận nào.</p>
+            )}
+
+            <div className="flex items-end gap-2">
+              <textarea
+                className="flex-1 bg-slate-50 rounded-lg p-2 text-sm border-none focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"
+                rows={2}
+                placeholder={canComment ? 'Viết bình luận của bạn...' : 'Đăng nhập để bình luận...'}
+                value={commentValue}
+                onChange={(e) => onCommentValueChange(e.target.value)}
+                disabled={!canComment}
+              />
+              <button
+                onClick={canComment ? onCommentSubmit : onLoginRequest}
+                disabled={canComment ? (!commentValue.trim() || commentSubmitting) : false}
+                className="bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {canComment ? (commentSubmitting ? 'Đang gửi...' : 'Gửi') : 'Đăng nhập'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

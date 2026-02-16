@@ -33,6 +33,7 @@ postsRouter.get('/posts', optionalAuth, async (req: AuthenticatedRequest, res, n
             include: {
                 author: { select: { name: true } },
                 likes: userId ? { where: { userId }, select: { id: true } } : false,
+                _count: { select: { comments: true } },
             },
         });
 
@@ -42,7 +43,7 @@ postsRouter.get('/posts', optionalAuth, async (req: AuthenticatedRequest, res, n
             content: p.content,
             image: p.imageUrl ?? undefined,
             likes: p.likeCount,
-            comments: 0,
+            comments: p._count?.comments ?? 0,
             timestamp: humanizeFromDate(p.createdAt),
             tags: typeof p.tags === 'string' ? JSON.parse(p.tags) : [],
             is_liked: Boolean(p.likes?.length),
@@ -134,6 +135,83 @@ postsRouter.delete('/posts/:id/like', requireAuth, async (req: AuthenticatedRequ
         });
 
         res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+});
+
+postsRouter.get('/posts/:id/comments', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const postId = z.string().uuid().parse(req.params.id);
+        const query = z
+            .object({
+                take: z.coerce.number().int().min(1).max(100).optional(),
+            })
+            .parse(req.query);
+
+        const rows = await (prisma as any).postComment.findMany({
+            where: { postId },
+            orderBy: { createdAt: 'asc' },
+            take: query.take ?? 50,
+            include: {
+                author: { select: { id: true, name: true } },
+            },
+        });
+
+        const userId = req.user?.id;
+        const comments = rows.map((row: any) => ({
+            id: row.id,
+            user_name: row.author.name,
+            content: row.content,
+            timestamp: humanizeFromDate(row.createdAt),
+            can_edit: Boolean(userId && row.author.id === userId),
+        }));
+
+        res.json({ comments });
+    } catch (err) {
+        next(err);
+    }
+});
+
+const CreateCommentSchema = z.object({
+    content: z.string().min(1).max(1000),
+});
+
+postsRouter.post('/posts/:id/comments', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const postId = z.string().uuid().parse(req.params.id);
+        const userId = req.user!.id;
+        const body = CreateCommentSchema.parse(req.body);
+
+        const existingPost = await (prisma as any).post.findUnique({
+            where: { id: postId },
+            select: { id: true },
+        });
+
+        if (!existingPost) {
+            return res.status(404).json({ error: 'Bài viết không tồn tại' });
+        }
+
+        const created = await (prisma as any).postComment.create({
+            data: {
+                postId,
+                authorId: userId,
+                content: body.content.trim(),
+            },
+            include: {
+                author: { select: { name: true } },
+            },
+        });
+
+        res.status(201).json({
+            comment: {
+                id: created.id,
+                user_name: created.author.name,
+                content: created.content,
+                timestamp: humanizeFromDate(created.createdAt),
+                can_edit: true,
+            },
+        });
     } catch (err) {
         next(err);
     }

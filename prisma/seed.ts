@@ -126,6 +126,102 @@ const SAMPLE_PRODUCTS = [
     },
 ];
 
+const SAMPLE_COMMUNITY_USERS = [
+    { email: 'nongdan.an@eco.vn', name: 'Lê Minh An' },
+    { email: 'kysu.linh@eco.vn', name: 'Nguyễn Thu Linh' },
+    { email: 'startup.huy@eco.vn', name: 'Trần Gia Huy' },
+    { email: 'hoptacxa.hoa@eco.vn', name: 'Phạm Ngọc Hoa' },
+    { email: 'nongsinhthai.khanh@eco.vn', name: 'Đỗ Khánh Vy' },
+    { email: 'nonghoc.minh@eco.vn', name: 'Vũ Đức Minh' },
+    { email: 'thucphamxanh.trang@eco.vn', name: 'Bùi Mai Trang' },
+    { email: 'canhbao.manh@eco.vn', name: 'Phan Tuấn Mạnh' },
+];
+
+const SAMPLE_DISCUSSION_POSTS = [
+    {
+        authorEmail: 'nongdan.an@eco.vn',
+        content:
+            'Mình vừa thử phủ rơm rạ cho ruộng dưa leo 2 tuần nay, độ ẩm đất giữ tốt hơn hẳn. Có ai đã kết hợp thêm phân hữu cơ vi sinh để giảm tưới nước không?',
+        tags: ['#NongNghiepBenVung', '#TaiCheRomRa'],
+        imageUrl: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=1200',
+        createdMinutesAgo: 18,
+        likedBy: ['kysu.linh@eco.vn', 'startup.huy@eco.vn', 'hoptacxa.hoa@eco.vn', 'nongsinhthai.khanh@eco.vn'],
+    },
+    {
+        authorEmail: 'kysu.linh@eco.vn',
+        content:
+            'Đội mình thử mô hình ủ phân từ bã mía + vỏ cà phê theo tỷ lệ 6:4, sau 35 ngày nhiệt độ đống ủ ổn định và mùi dễ chịu hơn nhiều.',
+        tags: ['#KhoiNghiepXanh', '#NongNghiepTuanHoan'],
+        createdMinutesAgo: 42,
+        likedBy: ['nongdan.an@eco.vn', 'hoptacxa.hoa@eco.vn', 'thucphamxanh.trang@eco.vn'],
+    },
+    {
+        authorEmail: 'startup.huy@eco.vn',
+        content:
+            'Mọi người có nguồn mua than trấu ép viên ổn định ở miền Tây không? Bên mình cần khoảng 2 tấn/tháng để chạy thử lò sấy nông sản.',
+        tags: ['#TaiCheRomRa', '#KhoiNghiepXanh'],
+        createdMinutesAgo: 90,
+        likedBy: ['nongdan.an@eco.vn', 'nongsinhthai.khanh@eco.vn'],
+    },
+    {
+        authorEmail: 'hoptacxa.hoa@eco.vn',
+        content:
+            'Hợp tác xã của mình đang chuyển từ đốt bỏ phụ phẩm sang bán lại cho cơ sở trồng nấm. Tháng đầu tiên đã giảm chi phí xử lý gần 18%.',
+        tags: ['#NongNghiepBenVung', '#KinhTeXanh'],
+        imageUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=1200',
+        createdMinutesAgo: 150,
+        likedBy: ['nongdan.an@eco.vn', 'kysu.linh@eco.vn', 'nongsinhthai.khanh@eco.vn', 'canhbao.manh@eco.vn'],
+    },
+    {
+        authorEmail: 'nongsinhthai.khanh@eco.vn',
+        content:
+            'Có ai dùng xơ dừa đã xử lý để trộn giá thể cho dưa lưới nhà màng chưa? Mình đang thử công thức 50% xơ dừa + 30% trấu hun + 20% phân trùn.',
+        tags: ['#NongNghiepCongNgheCao', '#NongNghiepBenVung'],
+        createdMinutesAgo: 210,
+        likedBy: ['kysu.linh@eco.vn', 'thucphamxanh.trang@eco.vn', 'nonghoc.minh@eco.vn'],
+    },
+    {
+        authorEmail: 'nonghoc.minh@eco.vn',
+        content:
+            'Mình vừa tổng hợp số liệu: nếu thay đốt rơm bằng thu gom bán phụ phẩm, mỗi hecta có thể cắt giảm khoảng 1.2 - 1.5 tấn CO₂ tương đương/vụ.',
+        tags: ['#BienDoiKhiHau', '#NongNghiepBenVung'],
+        createdMinutesAgo: 280,
+        likedBy: ['kysu.linh@eco.vn', 'hoptacxa.hoa@eco.vn', 'canhbao.manh@eco.vn'],
+    },
+    {
+        authorEmail: 'thucphamxanh.trang@eco.vn',
+        content:
+            'Ai quan tâm workshop “Lên chuỗi giá trị cho phụ phẩm nông nghiệp” tuần tới không? Mình đăng ký rồi, nghe nói có phần kết nối nhà mua sỉ.',
+        tags: ['#SuKienXanh', '#KhoiNghiepXanh'],
+        createdMinutesAgo: 360,
+        likedBy: ['startup.huy@eco.vn', 'nongdan.an@eco.vn', 'hoptacxa.hoa@eco.vn'],
+    },
+    {
+        authorEmail: 'canhbao.manh@eco.vn',
+        content:
+            'Khu vực ngoại thành hôm nay có 3 điểm ghi nhận đốt rơm rạ trái phép. Mình đã báo chính quyền địa phương, mong bà con cùng nhắc nhau xử lý đúng cách.',
+        tags: ['#BienDoiKhiHau', '#CanhBaoMoiTruong'],
+        createdMinutesAgo: 520,
+        likedBy: ['nonghoc.minh@eco.vn', 'kysu.linh@eco.vn'],
+    },
+    {
+        authorEmail: 'nongdan.an@eco.vn',
+        content:
+            'Nhà mình đang tìm đầu ra ổn định cho 6 tấn rơm cuộn/tháng tại Đồng Tháp. Nếu bên nào cần làm nấm hoặc chăn nuôi có thể nhắn mình nhé.',
+        tags: ['#TaiCheRomRa', '#KetNoiCungCau'],
+        createdMinutesAgo: 780,
+        likedBy: ['startup.huy@eco.vn', 'thucphamxanh.trang@eco.vn', 'hoptacxa.hoa@eco.vn'],
+    },
+    {
+        authorEmail: 'kysu.linh@eco.vn',
+        content:
+            'Chia sẻ nhanh checklist an toàn khi ủ compost quy mô hộ: giữ ẩm 50-60%, đảo trộn 5-7 ngày/lần, che mưa trực tiếp và theo dõi nhiệt độ.',
+        tags: ['#KienThucNongNghiep', '#NongNghiepBenVung'],
+        createdMinutesAgo: 1040,
+        likedBy: ['nongsinhthai.khanh@eco.vn', 'nonghoc.minh@eco.vn', 'nongdan.an@eco.vn'],
+    },
+];
+
 async function main() {
     console.log('🌱 Bắt đầu seed database...');
 
@@ -148,9 +244,20 @@ async function main() {
     console.log(`✅ Demo seller: ${demoSeller.email}`);
 
     // Xóa sản phẩm cũ của seller này (nếu có)
-    await prisma.product.deleteMany({
+    const oldSellerProducts = await prisma.product.findMany({
         where: { sellerId: demoSeller.id },
+        select: { id: true },
     });
+
+    if (oldSellerProducts.length > 0) {
+        const oldSellerProductIds = oldSellerProducts.map((p) => p.id);
+        await prisma.cartItem.deleteMany({
+            where: { productId: { in: oldSellerProductIds } },
+        });
+        await prisma.product.deleteMany({
+            where: { id: { in: oldSellerProductIds } },
+        });
+    }
 
     // Tạo sản phẩm mẫu
     for (const product of SAMPLE_PRODUCTS) {
@@ -164,6 +271,77 @@ async function main() {
     }
 
     console.log(`\n✅ Đã thêm ${SAMPLE_PRODUCTS.length} sản phẩm mẫu!`);
+
+    // --- SEED COMMUNITY USERS & POSTS ---
+    console.log('🗣️ Bắt đầu seed thảo luận cộng đồng...');
+
+    const demoMemberPasswordHash = await bcrypt.hash('DemoMember123!', 12);
+
+    const seededCommunityUsers = await Promise.all(
+        SAMPLE_COMMUNITY_USERS.map((u) =>
+            prisma.user.upsert({
+                where: { email: u.email },
+                update: {
+                    name: u.name,
+                    passwordHash: demoMemberPasswordHash,
+                },
+                create: {
+                    email: u.email,
+                    name: u.name,
+                    passwordHash: demoMemberPasswordHash,
+                },
+            })
+        )
+    );
+
+    const communityUsers = [demoSeller, ...seededCommunityUsers];
+    const communityUserByEmail = new Map(communityUsers.map((u) => [u.email, u]));
+    const communityUserIds = communityUsers.map((u) => u.id);
+
+    const oldPosts = await prisma.post.findMany({
+        where: { authorId: { in: communityUserIds } },
+        select: { id: true },
+    });
+
+    if (oldPosts.length > 0) {
+        const oldPostIds = oldPosts.map((p) => p.id);
+        await prisma.postLike.deleteMany({ where: { postId: { in: oldPostIds } } });
+        await prisma.post.deleteMany({ where: { id: { in: oldPostIds } } });
+    }
+
+    let createdCommunityPostCount = 0;
+
+    for (const item of SAMPLE_DISCUSSION_POSTS) {
+        const author = communityUserByEmail.get(item.authorEmail);
+        if (!author) continue;
+
+        const likerIds = item.likedBy
+            .map((email) => communityUserByEmail.get(email)?.id)
+            .filter((id): id is string => Boolean(id));
+
+        const post = await prisma.post.create({
+            data: {
+                authorId: author.id,
+                content: item.content,
+                imageUrl: item.imageUrl,
+                tags: JSON.stringify(item.tags),
+                likeCount: likerIds.length,
+                createdAt: new Date(Date.now() - item.createdMinutesAgo * 60 * 1000),
+            },
+        });
+
+        if (likerIds.length > 0) {
+            await prisma.postLike.createMany({
+                data: likerIds.map((userId) => ({ postId: post.id, userId })),
+                skipDuplicates: true,
+            });
+        }
+
+        createdCommunityPostCount++;
+    }
+
+    console.log(`✅ Đã thêm ${seededCommunityUsers.length} user mẫu cộng đồng`);
+    console.log(`✅ Đã thêm ${createdCommunityPostCount} bài thảo luận mẫu`);
 
     // --- SEED POLLUTION REPORTS ---
     console.log('🏭 Bắt đầu seed dữ liệu ô nhiễm...');

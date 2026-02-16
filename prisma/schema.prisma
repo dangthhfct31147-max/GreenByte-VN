@@ -24,6 +24,7 @@ model User {
 
 	products Product[]
 	posts    Post[]
+	postComments PostComment[]
 	cart     Cart?
 
 	postLikes PostLike[]
@@ -119,10 +120,27 @@ model Post {
 	likeCount Int @default(0)
 
 	likes PostLike[]
+	comments PostComment[]
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
 
+	@@index([authorId])
+}
+
+model PostComment {
+	id      String @id @default(uuid())
+	postId  String
+	authorId String
+	content String
+
+	post   Post @relation(fields: [postId], references: [id])
+	author User @relation(fields: [authorId], references: [id])
+
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+
+	@@index([postId, createdAt])
 	@@index([authorId])
 }
 
