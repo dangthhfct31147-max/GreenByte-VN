@@ -56,6 +56,7 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
     const [saving, setSaving] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [form, setForm] = useState<ListingFormState | null>(null);
+    const [totalViews, setTotalViews] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('Tất cả');
     const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'quality_desc'>('newest');
@@ -73,13 +74,25 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
         setError(null);
 
         try {
-            const res = await apiFetch('products/seller/listings', { cache: 'no-store' });
-            const data = (await res.json()) as any;
-            if (!res.ok) throw new Error(data?.error ?? 'Không tải được sản phẩm đã đăng');
-            setListings(Array.isArray(data?.listings) ? data.listings : []);
+            const [listingsRes, dashboardRes] = await Promise.all([
+                apiFetch('products/seller/listings', { cache: 'no-store' }),
+                apiFetch('products/seller/dashboard', { cache: 'no-store' }),
+            ]);
+
+            const listingsData = (await listingsRes.json()) as any;
+            if (!listingsRes.ok) throw new Error(listingsData?.error ?? 'Không tải được sản phẩm đã đăng');
+            setListings(Array.isArray(listingsData?.listings) ? listingsData.listings : []);
+
+            const dashboardData = (await dashboardRes.json()) as any;
+            if (dashboardRes.ok) {
+                setTotalViews(Number(dashboardData?.overview?.totalViews ?? 0));
+            } else {
+                setTotalViews(0);
+            }
         } catch (e: any) {
             setError(e?.message ?? 'Có lỗi xảy ra khi tải danh sách.');
             setListings([]);
+            setTotalViews(0);
         } finally {
             setLoading(false);
         }
@@ -330,8 +343,8 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
                                     <div className="text-lg font-semibold text-emerald-800">{listings.length}</div>
                                 </div>
                                 <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
-                                    <div className="text-xs text-blue-700">Đang lọc</div>
-                                    <div className="text-lg font-semibold text-blue-800">{filteredListings.length}</div>
+                                    <div className="text-xs text-blue-700">Tổng người xem</div>
+                                    <div className="text-lg font-semibold text-blue-800">{totalViews}</div>
                                 </div>
                                 <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
                                     <div className="text-xs text-amber-700">Tổng giá trị</div>
