@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch, clearAuthToken } from '@/utils/api';
 import {
   Home,
@@ -8,7 +8,8 @@ import {
   Menu,
   X,
   Leaf,
-  ShoppingCart
+  ShoppingCart,
+  ChevronDown
 } from 'lucide-react';
 import { HomePage } from './components/pages/HomePage';
 import { SignupPage } from './components/pages/SignupPage';
@@ -20,12 +21,13 @@ import { CommunityPage } from './components/pages/CommunityPage';
 import { CartPage } from './components/pages/CartPage';
 import { ProductDetailPage } from './components/pages/ProductDetailPage';
 import { SellerProfilePage } from './components/pages/SellerProfilePage';
+import { MyListingsPage } from './components/pages/MyListingsPage';
 import { AdminLoginPage } from './components/pages/AdminLoginPage';
 import { AdminPage } from './components/pages/AdminPage';
 import { getAdminToken, setAdminToken } from '@/utils/adminAuth';
 
 // Types
-type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'product' | 'seller-profile' | 'admin-login' | 'admin';
+type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'my-listings' | 'product' | 'seller-profile' | 'admin-login' | 'admin';
 
 // URL path to Route mapping
 const pathToRoute: Record<string, Route> = {
@@ -38,6 +40,7 @@ const pathToRoute: Record<string, Route> = {
   '/signup': 'signup',
   '/cart': 'cart',
   '/profile': 'profile',
+  '/my-listings': 'my-listings',
   '/product': 'product',
   '/seller': 'seller-profile',
   '/admin': 'admin',
@@ -53,6 +56,7 @@ const routeToPath: Record<Route, string> = {
   signup: '/signup',
   cart: '/cart',
   profile: '/profile',
+  'my-listings': '/my-listings',
   product: '/product',
   'seller-profile': '/seller',
   admin: '/admin',
@@ -89,8 +93,10 @@ export default function App() {
   const initialState = getRouteFromPath();
   const [currentRoute, setCurrentRoute] = useState<Route>(initialState.route);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState<{ name: string; id: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; id: string; email: string; avatarUrl?: string } | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Cart State (Lifted)
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -100,6 +106,22 @@ export default function App() {
   const [selectedSellerId, setSelectedSellerId] = useState<string | null>(initialState.sellerId);
   const [adminUser, setAdminUser] = useState<{ email: string } | null>(null);
 
+  const getAvatarStorageKey = (userId: string) => `eco_user_avatar_${userId}`;
+  const getAvatarFromStorage = (userId: string) => {
+    try {
+      return localStorage.getItem(getAvatarStorageKey(userId)) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'U';
+    if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+    return `${parts[0].slice(0, 1)}${parts[parts.length - 1].slice(0, 1)}`.toUpperCase();
+  };
+
   // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = () => {
@@ -108,6 +130,7 @@ export default function App() {
       setSelectedProductId(productId);
       setSelectedSellerId(sellerId);
       setIsMobileMenuOpen(false);
+      setIsUserMenuOpen(false);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -135,6 +158,7 @@ export default function App() {
 
     setCurrentRoute(route);
     setIsMobileMenuOpen(false);
+    setIsUserMenuOpen(false);
     window.scrollTo(0, 0);
   };
 
@@ -152,7 +176,7 @@ export default function App() {
         if (res.ok && data?.user) {
           const u = data.user as any;
           if (typeof u?.id === 'string' && typeof u?.name === 'string' && typeof u?.email === 'string') {
-            setUser({ id: u.id, name: u.name, email: u.email });
+            setUser({ id: u.id, name: u.name, email: u.email, avatarUrl: getAvatarFromStorage(u.id) });
           }
         } else {
           setUser(null);
@@ -254,6 +278,23 @@ export default function App() {
     navigate('home');
   };
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!userMenuRef.current) return;
+      if (!userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+
+    if (isUserMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isUserMenuOpen]);
+
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const isAdminRoute = currentRoute === 'admin' || currentRoute === 'admin-login';
 
@@ -339,15 +380,52 @@ export default function App() {
             <div className="w-px h-6 bg-slate-200 mx-1"></div>
 
             {user ? (
-              <div className="flex items-center gap-3">
+              <div className="relative" ref={userMenuRef}>
                 <button
-                  onClick={() => navigate('profile')}
-                  className="text-sm font-medium text-slate-700 truncate max-w-[140px] hover:text-emerald-600 transition-colors"
-                  title="Hồ sơ"
+                  type="button"
+                  onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-2 rounded-full border border-slate-200 pl-1 pr-3 py-1 hover:border-emerald-300 transition-colors"
+                  aria-haspopup="menu"
                 >
-                  {user.name}
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="User avatar" className="w-8 h-8 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs flex items-center justify-center">
+                      {getInitials(user.name)}
+                    </div>
+                  )}
+                  <ChevronDown size={16} className={`text-slate-500 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
-                <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-red-500">Đăng xuất</button>
+
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-2 z-50">
+                    <div className="px-3 pb-2 border-b border-slate-100">
+                      <div className="text-sm font-medium text-slate-800 truncate">{user.name}</div>
+                      <div className="text-xs text-slate-500 truncate">{user.email}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('profile')}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Cài đặt tài khoản
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('my-listings')}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Sản phẩm đã đăng
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50"
+                    >
+                      Đăng xuất
+                    </button>
+                  </div>
+                )}
               </div>
             ) : sessionChecked ? (
               <>
@@ -392,6 +470,7 @@ export default function App() {
             {user ? (
               <>
                 <button onClick={() => navigate('profile')} className="block w-full text-left py-2 font-medium text-slate-600">Hồ sơ</button>
+                <button onClick={() => navigate('my-listings')} className="block w-full text-left py-2 font-medium text-slate-600">Sản phẩm đã đăng</button>
                 <button onClick={handleLogout} className="block w-full text-left py-2 font-medium text-red-500">Đăng xuất ({user.name})</button>
               </>
             ) : sessionChecked ? (
@@ -470,8 +549,24 @@ export default function App() {
           <ProfilePage
             user={user}
             onBack={() => navigate('home')}
-            onUserUpdated={(u) => setUser(u)}
+            onUserUpdated={(u) => {
+              setUser((prev) => (prev ? { ...u, avatarUrl: u.avatarUrl ?? prev.avatarUrl } : u));
+            }}
+            onAvatarUpdated={(avatarUrl) => {
+              setUser((prev) => (prev ? { ...prev, avatarUrl } : prev));
+            }}
           />
+        )}
+
+        {currentRoute === 'my-listings' && user && (
+          <MyListingsPage
+            onBack={() => navigate('home')}
+            onViewProduct={(productId) => navigate('product', productId)}
+          />
+        )}
+
+        {currentRoute === 'my-listings' && !user && (
+          <div className="p-10 text-center text-slate-500">Vui lòng đăng nhập để xem sản phẩm đã đăng.</div>
         )}
 
         {currentRoute === 'profile' && !user && (

@@ -97,10 +97,12 @@ export const ProfilePage = ({
     user,
     onBack,
     onUserUpdated,
+    onAvatarUpdated,
 }: {
-    user: { id: string; name: string; email: string };
+    user: { id: string; name: string; email: string; avatarUrl?: string };
     onBack: () => void;
-    onUserUpdated?: (user: { id: string; name: string; email: string }) => void;
+    onUserUpdated?: (user: { id: string; name: string; email: string; avatarUrl?: string }) => void;
+    onAvatarUpdated?: (avatarUrl: string | undefined) => void;
 }) => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -112,6 +114,7 @@ export const ProfilePage = ({
     const [profileName, setProfileName] = useState(user.name);
     const [profileEmail, setProfileEmail] = useState(user.email);
     const [profileCreatedAt, setProfileCreatedAt] = useState<string | null>(null);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(user.avatarUrl ?? null);
 
     const [passwordLoading, setPasswordLoading] = useState(false);
     const [currentPassword, setCurrentPassword] = useState('');
@@ -128,8 +131,18 @@ export const ProfilePage = ({
     const [code, setCode] = useState('');
     const [localSettings, setLocalSettings] = useState<LocalProfileSettings>(DEFAULT_LOCAL_SETTINGS);
     const [savingSettings, setSavingSettings] = useState(false);
+    const avatarInputId = 'profile-avatar-input';
 
     const jsonHeaders = useMemo(() => ({ 'Content-Type': 'application/json' }), []);
+
+    const avatarStorageKey = useMemo(() => `eco_user_avatar_${user.id}`, [user.id]);
+
+    const profileInitials = useMemo(() => {
+        const parts = profileName.trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return 'U';
+        if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+        return `${parts[0].slice(0, 1)}${parts[parts.length - 1].slice(0, 1)}`.toUpperCase();
+    }, [profileName]);
 
     const AccordionItem = ({
         id,
@@ -217,7 +230,7 @@ export const ProfilePage = ({
             if (u?.email) setProfileEmail(u.email);
             if (u?.createdAt) setProfileCreatedAt(u.createdAt);
             if (u?.id && u?.name && u?.email) {
-                onUserUpdated?.({ id: u.id, name: u.name, email: u.email });
+                onUserUpdated?.({ id: u.id, name: u.name, email: u.email, avatarUrl: avatarPreview ?? undefined });
             }
         } catch (e: any) {
             if (e?.name !== 'AbortError') {
@@ -261,7 +274,8 @@ export const ProfilePage = ({
     useEffect(() => {
         setProfileName(user.name);
         setProfileEmail(user.email);
-    }, [user.id, user.name, user.email]);
+        setAvatarPreview(user.avatarUrl ?? null);
+    }, [user.id, user.name, user.email, user.avatarUrl]);
 
     useEffect(() => {
         setLocalSettings(loadLocalSettings());
@@ -342,7 +356,7 @@ export const ProfilePage = ({
 
             const u = data?.user as { id: string; name: string; email: string; createdAt?: string };
             if (u?.id && u?.name && u?.email) {
-                onUserUpdated?.({ id: u.id, name: u.name, email: u.email });
+                onUserUpdated?.({ id: u.id, name: u.name, email: u.email, avatarUrl: avatarPreview ?? undefined });
                 setProfileName(u.name);
                 setProfileEmail(u.email);
             }
@@ -482,6 +496,44 @@ export const ProfilePage = ({
 
     const showSetup = !totpEnabled && (setup !== null);
 
+    const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const maxSize = 2 * 1024 * 1024;
+        if (!file.type.startsWith('image/')) {
+            setError('Vui lòng chọn tệp ảnh hợp lệ.');
+            event.target.value = '';
+            return;
+        }
+        if (file.size > maxSize) {
+            setError('Ảnh đại diện tối đa 2MB.');
+            event.target.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+            if (!dataUrl) {
+                setError('Không thể đọc ảnh đại diện.');
+                return;
+            }
+
+            setAvatarPreview(dataUrl);
+            onAvatarUpdated?.(dataUrl);
+            setSuccess('Đã cập nhật avatar.');
+            setError(null);
+            try {
+                localStorage.setItem(avatarStorageKey, dataUrl);
+            } catch {
+                setError('Không thể lưu avatar trên thiết bị này.');
+            }
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+    };
+
     return (
         <div className="min-h-[calc(100vh-64px)] py-10 px-4 select-none">
             <div className="container mx-auto max-w-3xl">
@@ -501,6 +553,32 @@ export const ProfilePage = ({
 
                 <div className="space-y-5">
                     <AccordionItem id="profile" title="Thông tin cá nhân" icon={<UserIcon size={18} />}>
+                        <div className="mb-5 flex items-center gap-4">
+                            {avatarPreview ? (
+                                <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border border-slate-200" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xl flex items-center justify-center border border-emerald-200">
+                                    {profileInitials}
+                                </div>
+                            )}
+                            <div>
+                                <label
+                                    htmlFor={avatarInputId}
+                                    className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                >
+                                    Đổi avatar
+                                </label>
+                                <input
+                                    id={avatarInputId}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleAvatarChange}
+                                />
+                                <div className="text-xs text-slate-500 mt-1">PNG/JPG/WebP, tối đa 2MB.</div>
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label htmlFor="profile-name" className="block text-sm font-medium text-slate-700 mb-1">Họ và tên</label>

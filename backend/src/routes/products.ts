@@ -462,6 +462,49 @@ productsRouter.get('/seller/dashboard', requireAuth, async (req: AuthenticatedRe
     }
 });
 
+productsRouter.get('/seller/listings', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const sellerId = req.user!.id;
+
+        const listings: any[] = await (prisma.product as any).findMany({
+            where: { sellerId, deletedAt: null },
+            select: {
+                id: true,
+                title: true,
+                priceVnd: true,
+                qualityScore: true,
+                unit: true,
+                category: true,
+                location: true,
+                imageUrl: true,
+                description: true,
+                co2SavingsKg: true,
+                createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+        } as any);
+
+        return res.json({
+            listings: listings.map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                price: item.priceVnd,
+                quality_score: item.qualityScore,
+                unit: item.unit,
+                category: item.category,
+                location: item.location,
+                image: item.imageUrl,
+                description: item.description ?? undefined,
+                co2_savings_kg: item.co2SavingsKg,
+                posted_at: item.createdAt,
+            })),
+        });
+    } catch (err) {
+        return next(err);
+    }
+});
+
 productsRouter.get('/:id/reviews', async (req, res, next) => {
     try {
         const productId = z.string().uuid().parse(req.params.id);
@@ -930,6 +973,40 @@ const CreateProductSchema = z
         }
     });
 
+const UpdateProductSchema = z
+    .object({
+        title: z.string().min(3).max(200).optional(),
+        price: z.number().int().min(0).max(1_000_000_000).optional(),
+        quality_score: z.number().int().min(1).max(5).optional(),
+        unit: z.string().min(1).max(30).optional(),
+        category: z.string().min(1).max(50).optional(),
+        location: z.string().min(1).max(120).optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        image: z.string().url().max(500).optional(),
+        co2_savings_kg: z.number().int().min(0).max(1_000_000).optional(),
+        description: z.string().max(2000).optional(),
+    })
+    .superRefine((value, ctx) => {
+        const hasLat = typeof value.latitude === 'number';
+        const hasLng = typeof value.longitude === 'number';
+        if (hasLat !== hasLng) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'latitude và longitude phải đi cùng nhau',
+                path: ['latitude'],
+            });
+        }
+
+        if (Object.keys(value).length === 0) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Không có dữ liệu để cập nhật',
+                path: ['title'],
+            });
+        }
+    });
+
 productsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
         const body = CreateProductSchema.parse(req.body);
@@ -985,6 +1062,111 @@ productsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res, nex
                 }
             }
         }
+    } catch (err) {
+        next(err);
+    }
+});
+
+productsRouter.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const userId = req.user!.id;
+        const params = z.object({ id: z.string().uuid() }).parse(req.params);
+        const body = UpdateProductSchema.parse(req.body);
+
+        const existing = await (prisma.product as any).findFirst({
+            where: { id: params.id, sellerId: userId, deletedAt: null },
+            include: { seller: { select: { id: true, name: true } } },
+        });
+
+        if (!existing) {
+            return res.status(404).json({ error: 'Không tìm thấy sản phẩm để cập nhật' });
+        }
+
+        const data: Record<string, unknown> = {};
+        if (body.title !== undefined) data.title = body.title;
+        if (body.price !== undefined) data.priceVnd = body.price;
+        if (body.quality_score !== undefined) data.qualityScore = body.quality_score;
+        if (body.unit !== undefined) data.unit = body.unit;
+        if (body.category !== undefined) data.category = body.category;
+        if (body.location !== undefined) data.location = body.location;
+        if (body.latitude !== undefined) data.latitude = body.latitude;
+        if (body.longitude !== undefined) data.longitude = body.longitude;
+        if (body.image !== undefined) data.imageUrl = body.image;
+        if (body.co2_savings_kg !== undefined) data.co2SavingsKg = body.co2_savings_kg;
+        if (body.description !== undefined) data.description = body.description;
+
+        const updated = await (prisma.product as any).update({
+            where: { id: params.id },
+            data,
+            include: { seller: { select: { id: true, name: true } } },
+        });
+
+        await cacheDelete(CACHE_KEYS.productsInvalidate);
+
+        if (isAccelerateEnabled()) {
+            const accel = (prisma as any).$accelerate;
+            if (accel?.invalidate) {
+                try {
+                    await accel.invalidate({ tags: ['products'] });
+                } catch {
+                    // ignore cache invalidation errors
+                }
+            }
+        }
+
+        return res.json({
+            product: {
+                id: updated.id,
+                title: updated.title,
+                price: updated.priceVnd,
+                quality_score: updated.qualityScore,
+                unit: updated.unit,
+                category: updated.category,
+                location: updated.location,
+                image: updated.imageUrl,
+                description: updated.description ?? undefined,
+                co2_savings_kg: updated.co2SavingsKg,
+                posted_at: updated.createdAt,
+            },
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+productsRouter.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const userId = req.user!.id;
+        const params = z.object({ id: z.string().uuid() }).parse(req.params);
+
+        const existing = await (prisma.product as any).findFirst({
+            where: { id: params.id, sellerId: userId, deletedAt: null },
+            select: { id: true },
+        });
+
+        if (!existing) {
+            return res.status(404).json({ error: 'Không tìm thấy sản phẩm để xóa' });
+        }
+
+        await (prisma.product as any).update({
+            where: { id: params.id },
+            data: { deletedAt: new Date() },
+        });
+
+        await cacheDelete(CACHE_KEYS.productsInvalidate);
+
+        if (isAccelerateEnabled()) {
+            const accel = (prisma as any).$accelerate;
+            if (accel?.invalidate) {
+                try {
+                    await accel.invalidate({ tags: ['products'] });
+                } catch {
+                    // ignore cache invalidation errors
+                }
+            }
+        }
+
+        return res.json({ success: true });
     } catch (err) {
         next(err);
     }
