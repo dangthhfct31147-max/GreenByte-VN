@@ -332,8 +332,8 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
                                 </AppSelect>
 
                                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 flex items-center justify-between">
-                                    <span>Hiển thị</span>
-                                    <span className="font-semibold text-slate-900">{filteredListings.length} sản phẩm</span>
+                                    <span>Tổng lượt xem</span>
+                                    <span className="font-semibold text-slate-900">{totalViews}</span>
                                 </div>
                             </div>
 
@@ -343,8 +343,8 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
                                     <div className="text-lg font-semibold text-emerald-800">{listings.length}</div>
                                 </div>
                                 <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
-                                    <div className="text-xs text-blue-700">Tổng người xem</div>
-                                    <div className="text-lg font-semibold text-blue-800">{totalViews}</div>
+                                    <div className="text-xs text-blue-700">Đang lọc</div>
+                                    <div className="text-lg font-semibold text-blue-800">{filteredListings.length}</div>
                                 </div>
                                 <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
                                     <div className="text-xs text-amber-700">Tổng giá trị</div>
