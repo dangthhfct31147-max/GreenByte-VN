@@ -13,6 +13,7 @@ import {
     Send,
     BadgeDollarSign,
     TrendingUp,
+    ThumbsUp,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
@@ -114,7 +115,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
     const [reviews, setReviews] = useState<ReviewItem[]>([]);
     const [reviewSummary, setReviewSummary] = useState({ average_rating: 0, total_reviews: 0 });
-    const [reviewRating, setReviewRating] = useState('5');
+    const [reviewRating, setReviewRating] = useState(5);
+    const [reviewHover, setReviewHover] = useState(0);
     const [reviewContent, setReviewContent] = useState('');
     const [submittingReview, setSubmittingReview] = useState(false);
 
@@ -250,7 +252,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    rating: Number(reviewRating),
+                    rating: reviewRating,
                     content: reviewContent.trim(),
                 }),
             });
@@ -258,7 +260,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             if (!res.ok) throw new Error(data?.error ?? 'Không gửi được đánh giá');
 
             setReviewContent('');
-            setReviewRating('5');
+            setReviewRating(5);
+            setReviewHover(0);
             await loadReviews();
         } catch (err: any) {
             alert(err?.message ?? 'Có lỗi xảy ra');
@@ -492,60 +495,169 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <section className="bg-white rounded-2xl border border-slate-200 p-5">
-                        <h3 className="text-lg font-semibold text-slate-900 mb-3">Review thật & đánh giá</h3>
-                        <div className="text-sm text-slate-600 mb-4">
-                            Trung bình <span className="font-semibold text-slate-900">{reviewSummary.average_rating.toFixed(2)}/5</span> • {reviewSummary.total_reviews} lượt đánh giá
+                        {/* ── Header ── */}
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <Star size={18} className="text-amber-400 fill-amber-400" />
+                                Đánh giá sản phẩm
+                            </h3>
+                            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full">
+                                {reviewSummary.total_reviews} lượt đánh giá
+                            </span>
                         </div>
 
-                        <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                            {reviews.length === 0 && <div className="text-sm text-slate-500">Chưa có đánh giá nào.</div>}
+                        {/* ── Rating summary ── */}
+                        <div className="flex items-center gap-5 mb-5 p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-100">
+                            <div className="text-center shrink-0">
+                                <div className="text-5xl font-bold text-amber-500 leading-none">{reviewSummary.average_rating.toFixed(1)}</div>
+                                <div className="flex items-center justify-center gap-0.5 mt-1.5 mb-1">
+                                    {[1, 2, 3, 4, 5].map((s) => (
+                                        <Star key={s} size={14}
+                                            className={s <= Math.round(reviewSummary.average_rating) ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="text-xs text-slate-500">trên tổng số 5</div>
+                            </div>
+                            <div className="flex-1 space-y-1.5">
+                                {[5, 4, 3, 2, 1].map((star) => {
+                                    const count = reviews.filter(r => r.rating === star).length;
+                                    const pct = reviewSummary.total_reviews > 0 ? Math.round((count / reviewSummary.total_reviews) * 100) : 0;
+                                    return (
+                                        <div key={star} className="flex items-center gap-2">
+                                            <span className="text-xs text-slate-500 w-3 shrink-0">{star}</span>
+                                            <Star size={11} className="text-amber-400 fill-amber-400 shrink-0" />
+                                            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
+                                            <span className="text-xs text-slate-400 w-7 text-right">{pct}%</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* ── Review list ── */}
+                        <div className="space-y-3 max-h-64 overflow-y-auto pr-1 mb-4">
+                            {reviews.length === 0 && (
+                                <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-2">
+                                    <Star size={28} className="text-slate-300" />
+                                    <p className="text-sm">Chưa có đánh giá nào.</p>
+                                </div>
+                            )}
                             {reviews.map((review) => (
-                                <div key={review.id} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="text-sm font-medium text-slate-900">{review.reviewer.name}</div>
-                                        <div className="text-xs text-slate-500">{formatDate(review.created_at)}</div>
+                                <div key={review.id} className="rounded-xl border border-slate-200 p-3 bg-slate-50 hover:bg-white hover:shadow-sm transition-all">
+                                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                                                {review.reviewer.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-900 leading-tight">{review.reviewer.name}</div>
+                                                <div className="text-[11px] text-slate-400">{formatDate(review.created_at)}</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 shrink-0">
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                                <Star key={s} size={12}
+                                                    className={s <= review.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-200'}
+                                                />
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-1 text-amber-500 text-sm mb-1">
-                                        <Star size={13} fill="currentColor" />
-                                        <span>{review.rating}/5</span>
-                                        {review.verified_interaction && (
-                                            <span className="text-emerald-600 text-xs ml-2">Đã xác thực tương tác</span>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-slate-700">{review.content}</p>
+                                    {review.verified_interaction && (
+                                        <div className="flex items-center gap-1 text-emerald-600 text-xs mb-1.5">
+                                            <CheckCircle2 size={12} />
+                                            <span>Đã xác thực giao dịch</span>
+                                        </div>
+                                    )}
+                                    <p className="text-sm text-slate-700 leading-relaxed">{review.content}</p>
                                 </div>
                             ))}
                         </div>
 
+                        {/* ── Write review ── */}
                         {user && !isSellerView && (
-                            <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
-                                <div className="grid grid-cols-4 gap-2">
-                                    <AppSelect
-                                        aria-label="Chọn số sao đánh giá"
-                                        value={reviewRating}
-                                        onChange={(e) => setReviewRating(e.target.value)}
-                                        className="col-span-1 border border-slate-200 rounded-lg px-2 py-2 text-sm"
-                                        wrapperClassName="col-span-1"
-                                    >
-                                        <option value="5">5★</option>
-                                        <option value="4">4★</option>
-                                        <option value="3">3★</option>
-                                        <option value="2">2★</option>
-                                        <option value="1">1★</option>
-                                    </AppSelect>
-                                    <input
-                                        value={reviewContent}
-                                        onChange={(e) => setReviewContent(e.target.value)}
-                                        className="col-span-3 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                        placeholder="Viết đánh giá của bạn..."
-                                    />
+                            <div className="border-t border-slate-200 pt-4">
+                                <p className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-1.5">
+                                    <ThumbsUp size={14} className="text-emerald-500" />
+                                    Viết đánh giá của bạn
+                                </p>
+
+                                {/* Star picker */}
+                                <div className="flex items-center gap-1 mb-3">
+                                    {[1, 2, 3, 4, 5].map((s) => (
+                                        <button
+                                            key={s}
+                                            type="button"
+                                            onClick={() => setReviewRating(s)}
+                                            onMouseEnter={() => setReviewHover(s)}
+                                            onMouseLeave={() => setReviewHover(0)}
+                                            className="focus:outline-none transition-transform hover:scale-110"
+                                            aria-label={`${s} sao`}
+                                        >
+                                            <Star
+                                                size={28}
+                                                className={
+                                                    s <= (reviewHover || reviewRating)
+                                                        ? 'text-amber-400 fill-amber-400'
+                                                        : 'text-slate-300 fill-slate-200'
+                                                }
+                                            />
+                                        </button>
+                                    ))}
+                                    <span className="ml-2 text-sm text-slate-500">
+                                        {(() => {
+                                            const v = reviewHover || reviewRating;
+                                            if (v === 5) return 'Xuất sắc!';
+                                            if (v === 4) return 'Tốt';
+                                            if (v === 3) return 'Bình thường';
+                                            if (v === 2) return 'Chưa tốt';
+                                            return 'Rất tệ';
+                                        })()}
+                                    </span>
                                 </div>
+
+                                <textarea
+                                    value={reviewContent}
+                                    onChange={(e) => setReviewContent(e.target.value)}
+                                    rows={3}
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none transition mb-2"
+                                    placeholder="Chia sẻ trải nghiệm của bạn với sản phẩm này..."
+                                />
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs text-slate-400">{reviewContent.length}/1000 ký tự</span>
+                                    <button
+                                        onClick={submitReview}
+                                        disabled={submittingReview || !reviewContent.trim() || reviewContent.length < 6}
+                                        className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium disabled:opacity-50 hover:bg-emerald-700 transition flex items-center gap-1.5 shadow-sm"
+                                    >
+                                        {submittingReview ? (
+                                            <>
+                                                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                Đang gửi...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send size={14} />
+                                                Gửi đánh giá
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {!user && (
+                            <div className="border-t border-slate-200 pt-4 text-center">
+                                <p className="text-sm text-slate-500 mb-2">Đăng nhập để viết đánh giá</p>
                                 <button
-                                    onClick={submitReview}
-                                    disabled={submittingReview || !reviewContent.trim()}
-                                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                                    onClick={onLoginRequest}
+                                    className="px-4 py-2 rounded-xl border border-emerald-300 text-emerald-700 text-sm font-medium hover:bg-emerald-50 transition"
                                 >
-                                    {submittingReview ? 'Đang gửi...' : 'Gửi đánh giá'}
+                                    Đăng nhập ngay
                                 </button>
                             </div>
                         )}
