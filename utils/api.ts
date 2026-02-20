@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const FALLBACK_TOKEN_KEY = 'eco_auth_token';
 

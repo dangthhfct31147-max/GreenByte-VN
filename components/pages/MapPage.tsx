@@ -704,7 +704,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
           let nearest: PollutionMarker | null = null;
           let minDist = Infinity;
 
-          markers.forEach(m => {
+          markers.forEach((m: PollutionMarker) => {
             const dist = userLatLng.distanceTo([m.lat, m.lng]);
             if (dist < minDist) {
               minDist = dist;
@@ -714,10 +714,11 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
           // 3. Smart Focus Decision
           if (nearest && minDist < 50000) {
+            const nearestMarker = nearest as unknown as PollutionMarker;
             // Fly to marker
-            smoothFlyTo(nearest.lat, nearest.lng);
+            smoothFlyTo(nearestMarker.lat, nearestMarker.lng);
             setTimeout(() => {
-              if (mapRef.current) setSelectedMarker(nearest);
+              if (mapRef.current) setSelectedMarker(nearestMarker);
             }, 2000);
           } else {
             // Fly to user
@@ -752,7 +753,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     };
 
     map.on('click', clickHandler);
-    return () => map.off('click', clickHandler);
+    return () => { map.off('click', clickHandler); };
   }, [addingMode]);
 
 
@@ -787,7 +788,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
       const m = L.marker([marker.lat, marker.lng], { icon: customIcon });
 
-      m.on('click', (e) => {
+      m.on('click', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e);
         setSelectedMarker(marker);
         smoothFlyTo(marker.lat, marker.lng);
