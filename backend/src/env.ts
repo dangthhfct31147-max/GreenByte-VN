@@ -58,12 +58,12 @@ const EnvSchema = z.object({
     ADMIN_PASSWORD_HASH: z.string().min(20).optional(),
     ADMIN_JWT_SECRET: z.string().min(32).optional(),
     ADMIN_ROLE: z.enum(['superadmin', 'moderator', 'analyst']).default('superadmin'),
-    // Blockchain (optional — only validated when present)
-    POLYGON_RPC_URL: z.string().url().optional(),
-    DEPLOYER_PRIVATE_KEY: z.string().length(64).optional(),
-    BYPRODUCT_REGISTRY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
-    ESCROW_CONTRACT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
-    GREEN_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    // Blockchain (optional — skip validation when empty/missing)
+    POLYGON_RPC_URL: z.preprocess(v => v || undefined, z.string().url().optional()),
+    DEPLOYER_PRIVATE_KEY: z.preprocess(v => v || undefined, z.string().length(64).optional()),
+    BYPRODUCT_REGISTRY_ADDRESS: z.preprocess(v => v || undefined, z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional()),
+    ESCROW_CONTRACT_ADDRESS: z.preprocess(v => v || undefined, z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional()),
+    GREEN_TOKEN_ADDRESS: z.preprocess(v => v || undefined, z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional()),
     CHAIN_ID: z.coerce.number().int().positive().optional(),
 });
 
