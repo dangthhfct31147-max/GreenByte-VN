@@ -437,6 +437,14 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => navigate('green-tokens')}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                    >
+                      <span>🌱</span> Green Token
+                    </button>
+                    <div className="border-t border-slate-100 my-1"></div>
+                    <button
+                      type="button"
                       onClick={handleLogout}
                       className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50"
                     >
