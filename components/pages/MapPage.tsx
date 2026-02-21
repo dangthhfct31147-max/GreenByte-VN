@@ -176,6 +176,11 @@ const POI_CATEGORIES: Record<POICategory, { label: string; emoji: string; color:
 
 const ALL_POI_CATEGORIES = Object.keys(POI_CATEGORIES) as POICategory[];
 
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
 
 
 const POLLUTION_TYPES: Record<PollutionType, { label: string, icon: string, color: string }> = {
@@ -243,6 +248,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const poiLayerRef = useRef<L.LayerGroup | null>(null);
   const poiCacheRef = useRef<Map<string, POIItem[]>>(new Map());
   const poiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const overpassCooldownUntilRef = useRef<number>(0);
   const flyMoveEndHandlerRef = useRef<(() => void) | null>(null);
   const greenIndexLayerRef = useRef<L.GeoJSON | null>(null);
 
@@ -711,6 +717,10 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
   // --- POI Fetch Logic ---
   const fetchPOIs = useCallback(async (bounds: L.LatLngBounds, categories: Set<POICategory>) => {
+    if (Date.now() < overpassCooldownUntilRef.current) {
+      return;
+    }
+
     const south = bounds.getSouth();
     const west = bounds.getWest();
     const north = bounds.getNorth();
@@ -742,12 +752,45 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     const query = `[out:json][timeout:10];(\n${tagQueries}\n);out body 200;`;
 
     try {
-      const res = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-      const data = await res.json();
+      let data: any = null;
+      let hitRateLimit = false;
+
+      for (const endpoint of OVERPASS_ENDPOINTS) {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+        });
+
+        if (res.status === 429) {
+          hitRateLimit = true;
+          continue;
+        }
+
+        if (!res.ok) {
+          continue;
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('application/json')) {
+          continue;
+        }
+
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+
+        if (data) break;
+      }
+
+      if (!data) {
+        if (hitRateLimit) {
+          overpassCooldownUntilRef.current = Date.now() + 60_000;
+        }
+        return;
+      }
 
       const items: POIItem[] = (data.elements || []).map((el: any) => {
         // Determine category from tags
