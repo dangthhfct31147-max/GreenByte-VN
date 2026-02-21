@@ -14,8 +14,13 @@ export function getApiUrl(endpoint: string): string {
     let path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
     if (HAS_CUSTOM_API_BASE) {
-        if (API_BASE_URL.endsWith('/api') && path.startsWith('/api/')) {
-            path = path.slice('/api'.length);
+        const baseEndsWithApi = API_BASE_URL.endsWith('/api');
+        const pathStartsWithApi = path.startsWith('/api/') || path === '/api';
+
+        if (baseEndsWithApi && pathStartsWithApi) {
+            path = path.slice(4); // remove literal /api segment
+        } else if (!baseEndsWithApi && !pathStartsWithApi) {
+            path = `/api${path}`;
         }
         return `${API_BASE_URL}${path}`;
     }
