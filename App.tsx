@@ -366,12 +366,6 @@ export default function App() {
               Cộng Đồng
             </button>
             <button
-              onClick={() => navigate('green-tokens')}
-              className={`hover:text-emerald-600 transition-colors flex items-center gap-1 ${currentRoute === 'green-tokens' ? 'text-emerald-600' : 'text-slate-600'}`}
-            >
-              🌱 Green Token
-            </button>
-            <button
               onClick={() => navigate('green-index')}
               className={`hover:text-emerald-600 transition-colors flex items-center gap-1 ${currentRoute === 'green-index' ? 'text-emerald-600' : 'text-slate-600'}`}
             >
