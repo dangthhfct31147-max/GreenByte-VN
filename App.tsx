@@ -346,7 +346,7 @@ export default function App() {
           </div>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-8 font-medium text-sm">
+          <nav className="hidden md:flex items-center gap-5 font-medium text-sm whitespace-nowrap">
             <button
               onClick={() => navigate('marketplace')}
               className={`hover:text-emerald-600 transition-colors ${currentRoute === 'marketplace' ? 'text-emerald-600' : 'text-slate-600'}`}
