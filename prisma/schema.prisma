@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
 	provider = "cockroachdb"
+	url      = env("DATABASE_URL")
 }
 
 enum AdminRole {
@@ -52,6 +53,8 @@ model User {
 	loginChallenges LoginChallenge[]
 	loginAttempts   LoginAttempt[]
 	preferences     UserPreference?
+	greenTokens     GreenTokenLedger[]
+	walletAddress   String?
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -94,6 +97,7 @@ model Product {
 	reviews ProductReview[]
 	inquiries ProductInquiry[]
 	views ProductViewEvent[]
+	blockchainRecords BlockchainRecord[]
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -150,6 +154,7 @@ model ProductInquiry {
 	buyer   User    @relation("BuyerInquiries", fields: [buyerId], references: [id])
 	seller  User    @relation("SellerInquiries", fields: [sellerId], references: [id])
 	messages ProductInquiryMessage[]
+	escrows  EscrowContract[]
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -393,4 +398,58 @@ model UserPreference {
 	updatedAt DateTime @updatedAt
 
 	@@index([updatedAt])
+}
+
+// ===== BLOCKCHAIN MODELS =====
+
+model BlockchainRecord {
+	id            String   @id @default(uuid())
+	productId     String
+	product       Product  @relation(fields: [productId], references: [id])
+	txHash        String   @unique
+	ipfsHash      String
+	contractAddr  String
+	chainId       Int      @default(80002)
+	walletAddress String
+	status        String   @default("CONFIRMED")
+
+	createdAt DateTime @default(now())
+
+	@@index([productId])
+	@@index([txHash])
+	@@index([status])
+}
+
+model EscrowContract {
+	id            String   @id @default(uuid())
+	inquiryId     String
+	inquiry       ProductInquiry @relation(fields: [inquiryId], references: [id])
+	buyerAddress  String
+	sellerAddress String
+	amountWei     String
+	txHash        String?
+	contractAddr  String?
+	status        String   @default("CREATED")
+
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+
+	@@index([inquiryId])
+	@@index([status])
+}
+
+model GreenTokenLedger {
+	id          String   @id @default(uuid())
+	userId      String
+	user        User     @relation(fields: [userId], references: [id])
+	amount      Int
+	action      String
+	referenceId String?
+	txHash      String?
+
+	createdAt DateTime @default(now())
+
+	@@index([userId])
+	@@index([action])
+	@@index([createdAt])
 }

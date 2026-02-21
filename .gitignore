@@ -17,6 +17,16 @@ dist-ssr
 .env.*
 !.env.example
 
+# Blockchain build artifacts
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain-types/
+
+# Security-sensitive files
+*.pem
+*.key
+*.p12
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -27,3 +37,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Blockchain (Hardhat)
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain-types/

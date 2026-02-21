@@ -26,7 +26,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Build frontend and backend
-# This runs `vite build` and `tsc` as defined in package.json
+ENV NODE_ENV=production
 RUN npm run prisma:generate
 RUN npm run build
 RUN npm run build:server
@@ -64,11 +64,12 @@ COPY --from=builder --chown=node:node /app/prisma ./prisma
 # Generate Prisma Client in production
 RUN npx prisma generate
 
-# Copy necessary source files that might be needed at runtime (if any) or config
-# (Note: we use backend/dist/index.js for start)
+# Copy necessary config and static assets
+COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder --chown=node:node /app/public ./dist/public
 
-# Expose port
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
 # Switch to non-root user
@@ -79,5 +80,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 # Start application
-# Note: Adjust path to where your compiled backend index.js is located
 CMD ["dumb-init", "node", "backend/dist/index.js"]

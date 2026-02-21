@@ -26,6 +26,11 @@ const config: HardhatUserConfig = {
             accounts: [DEPLOYER_PRIVATE_KEY],
             chainId: 80002,
         },
+        polygon: {
+            url: process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-rpc.com",
+            accounts: [DEPLOYER_PRIVATE_KEY],
+            chainId: 137,
+        },
         localhost: {
             url: "http://127.0.0.1:8545",
         },

@@ -21,6 +21,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Generate Prisma & Build Backend
+ENV NODE_ENV=production
 RUN npm run prisma:generate
 RUN npm run build:server
 
@@ -47,11 +48,13 @@ RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 # Copy artifacts
 COPY --from=builder --chown=node:node /app/backend/dist ./backend/dist
 COPY --from=builder --chown=node:node /app/prisma ./prisma
+COPY --from=builder --chown=node:node /app/prisma.config.ts ./prisma.config.ts
 
 # Generate Prisma Client (needed in runtime)
 RUN npx prisma generate
 
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
 USER node

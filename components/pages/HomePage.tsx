@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Leaf, Map as MapIcon, RefreshCw, Users, TrendingUp, Globe, Heart, BookOpen, Quote } from 'lucide-react';
+import { ArrowRight, Leaf, Map as MapIcon, RefreshCw, Users, TrendingUp, Globe, Heart, BookOpen, Quote, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
 
@@ -295,6 +295,9 @@ export const HomePage = ({
         </div>
       </section>
 
+      {/* 🏆 Top 5 Tỉnh Thành Xanh Nhất Tháng */}
+      <ProvinceLeaderboardSection onNavigate={onNavigate} />
+
       {/* Inspiring Stories Section */}
       <section className="py-20 bg-gradient-to-b from-slate-50 to-white relative overflow-hidden">
         <div className="container mx-auto px-4 relative z-10">
@@ -583,3 +586,143 @@ const StatCard = ({ icon, value, label, sub }: { icon: React.ReactNode; value: s
     </div>
   </div>
 );
+
+// 🏆 Province Leaderboard Section
+const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) => void }) => {
+  const [top5, setTop5] = useState<{ name: string; score: number; transactions: number; events: number; newFarms: number; violations: number; frauds: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch('/api/green-index/provinces');
+        if (res.ok) {
+          const data = await res.json();
+          const sorted = [...data.provinces].sort((a: any, b: any) => b.score - a.score);
+          setTop5(sorted.slice(0, 5));
+        }
+      } catch { /* ignore */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const medals = ['🥇', '🥈', '🥉', '4', '5'];
+  const getColor = (score: number) => score > 60 ? '#22c55e' : score >= 30 ? '#f59e0b' : '#ef4444';
+  const getLabel = (score: number) => score > 60 ? 'Tuần hoàn tốt' : score >= 30 ? 'Trung bình' : 'Ô nhiễm cao';
+
+  const now = new Date();
+  const monthName = now.toLocaleDateString('vi-VN', { month: 'numeric', year: 'numeric' });
+
+  if (loading || top5.length === 0) return null;
+
+  return (
+    <section className="py-16 bg-gradient-to-b from-white to-emerald-50/30 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-bl from-amber-100/40 to-transparent rounded-full blur-3xl" />
+      <div className="container mx-auto px-4 relative z-10">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-100px' }}
+          variants={staggerContainer}
+          className="text-center mb-12"
+        >
+          <motion.div variants={fadeInUp} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 text-sm font-medium mb-4">
+            <Trophy size={16} />
+            Bảng xếp hạng thi đua
+          </motion.div>
+          <motion.h2 variants={fadeInUp} className="text-3xl md:text-5xl font-bold text-slate-900 mb-3">
+            Top 5 <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500">tỉnh thành xanh nhất</span>
+          </motion.h2>
+          <motion.p variants={fadeInUp} className="text-lg text-slate-500">
+            📅 Tháng {monthName}
+          </motion.p>
+        </motion.div>
+
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-50px' }}
+          variants={staggerContainer}
+          className="max-w-3xl mx-auto space-y-4"
+        >
+          {top5.map((province, idx) => (
+            <motion.div
+              key={province.name}
+              variants={fadeInUp}
+              className="group relative flex items-center gap-4 p-5 rounded-2xl border border-slate-100 bg-white hover:shadow-xl hover:border-emerald-200 transition-all duration-300"
+              style={idx === 0 ? { borderColor: 'rgba(234,179,8,0.4)', background: 'linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)', boxShadow: '0 4px 20px rgba(234,179,8,0.1)' } : {}}
+            >
+              {/* Rank */}
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${idx < 3 ? 'text-2xl' : 'bg-slate-100 text-slate-500 font-bold text-lg'
+                }`} style={idx < 3 ? {
+                  background: idx === 0 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' :
+                    idx === 1 ? 'linear-gradient(135deg, #cbd5e1, #94a3b8)' :
+                      'linear-gradient(135deg, #fb923c, #ea580c)',
+                  boxShadow: `0 4px 12px ${idx === 0 ? 'rgba(245,158,11,0.3)' : idx === 1 ? 'rgba(148,163,184,0.3)' : 'rgba(234,88,12,0.3)'}`,
+                } : {}}>
+                {idx < 3 ? medals[idx] : medals[idx]}
+              </div>
+
+              {/* Province Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <h4 className={`font-bold truncate ${idx === 0 ? 'text-lg text-slate-900' : 'text-base text-slate-800'}`}>
+                    {province.name}
+                  </h4>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium" style={{
+                    background: `${getColor(province.score)}18`,
+                    color: getColor(province.score),
+                  }}>
+                    {getLabel(province.score)}
+                  </span>
+                </div>
+
+                {/* Score Bar */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      whileInView={{ width: `${province.score}%` }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 1, delay: idx * 0.15, ease: 'easeOut' }}
+                      className="h-full rounded-full"
+                      style={{ background: `linear-gradient(90deg, ${getColor(province.score)}aa, ${getColor(province.score)})` }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold shrink-0" style={{ color: getColor(province.score), minWidth: '36px', textAlign: 'right' }}>
+                    {province.score}
+                  </span>
+                </div>
+
+                {/* Details - visible on hover */}
+                <div className="hidden group-hover:flex items-center gap-4 mt-2 text-xs text-slate-500 animate-in fade-in duration-200">
+                  <span>🤝 {province.transactions} giao dịch</span>
+                  <span>📦 {province.events} sự kiện</span>
+                  <span>🌾 {province.newFarms} nông hộ</span>
+                  {province.violations > 0 && <span className="text-red-400">🔥 {province.violations} vi phạm</span>}
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* CTA to full map */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="text-center mt-10"
+        >
+          <button
+            onClick={() => onNavigate('green-index')}
+            className="group inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-full font-medium hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-emerald-500/25"
+          >
+            🗺️ Xem bản đồ Chỉ Số Xanh toàn quốc
+            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        </motion.div>
+      </div>
+    </section>
+  );
+};

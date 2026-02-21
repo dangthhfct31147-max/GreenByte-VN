@@ -58,6 +58,13 @@ const EnvSchema = z.object({
     ADMIN_PASSWORD_HASH: z.string().min(20).optional(),
     ADMIN_JWT_SECRET: z.string().min(32).optional(),
     ADMIN_ROLE: z.enum(['superadmin', 'moderator', 'analyst']).default('superadmin'),
+    // Blockchain (optional — only validated when present)
+    POLYGON_RPC_URL: z.string().url().optional(),
+    DEPLOYER_PRIVATE_KEY: z.string().length(64).optional(),
+    BYPRODUCT_REGISTRY_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    ESCROW_CONTRACT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    GREEN_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    CHAIN_ID: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -89,6 +96,12 @@ export function getEnv(): Env {
         ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH,
         ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET,
         ADMIN_ROLE: process.env.ADMIN_ROLE,
+        POLYGON_RPC_URL: process.env.POLYGON_RPC_URL,
+        DEPLOYER_PRIVATE_KEY: process.env.DEPLOYER_PRIVATE_KEY,
+        BYPRODUCT_REGISTRY_ADDRESS: process.env.BYPRODUCT_REGISTRY_ADDRESS,
+        ESCROW_CONTRACT_ADDRESS: process.env.ESCROW_CONTRACT_ADDRESS,
+        GREEN_TOKEN_ADDRESS: process.env.GREEN_TOKEN_ADDRESS,
+        CHAIN_ID: process.env.CHAIN_ID,
     });
 
     if (!parsed.success) {

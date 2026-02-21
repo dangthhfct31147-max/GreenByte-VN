@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             vendor: ['react', 'react-dom'],
             ui: ['framer-motion', 'lucide-react'],
+            map: ['leaflet'],
           },
         },
       },

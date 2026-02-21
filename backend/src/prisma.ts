@@ -25,14 +25,14 @@ function createPrisma(): PrismaLike {
 
     const useAccelerate = typeof url === 'string' && url.startsWith('prisma://');
     if (useAccelerate) {
-        return new PrismaClient({ accelerateUrl: url }).$extends(withAccelerate()) as unknown as PrismaLike;
+        return new PrismaClient({ accelerateUrl: url } as any).$extends(withAccelerate()) as unknown as PrismaLike;
     }
 
     const adapter = new PrismaPg(
         { connectionString: url },
         { schema: getSchemaFromUrl(url) }
     );
-    return new PrismaClient({ adapter });
+    return new PrismaClient({ adapter } as any);
 }
 
 export const prisma: PrismaLike = global.__prisma ?? createPrisma();

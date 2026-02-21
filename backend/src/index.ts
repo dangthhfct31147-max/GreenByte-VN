@@ -17,6 +17,8 @@ import { eventsRouter } from './routes/events';
 import { pollutionRouter } from './routes/pollution';
 import { recommendationsRouter } from './routes/recommendations';
 import { adminRouter } from './routes/admin';
+import { blockchainRouter } from './routes/blockchain';
+import { greenIndexRouter } from './routes/green-index';
 import { errorHandler, notFound } from './middleware/errors';
 import { prisma } from './prisma';
 import { cache } from './lib/cache';
@@ -147,6 +149,29 @@ app.use(
     }),
 );
 
+// Stricter rate limit for blockchain (sensitive operations)
+app.use(
+    '/api/blockchain',
+    rateLimit({
+        windowMs: 60_000,
+        limit: 15,
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        message: { error: 'Too many blockchain requests, please try again later' },
+    }),
+);
+
+// Rate limit for green-index data
+app.use(
+    '/api/green-index',
+    rateLimit({
+        windowMs: 60_000,
+        limit: 60,
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+    }),
+);
+
 app.use('/api', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/products', productsRouter);
@@ -156,6 +181,8 @@ app.use('/api', eventsRouter);
 app.use('/api', recommendationsRouter);
 app.use('/api', pollutionRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/blockchain', blockchainRouter);
+app.use('/api/green-index', greenIndexRouter);
 
 // Serve static frontend in production
 if (isProd) {
