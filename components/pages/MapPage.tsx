@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import {
   AlertTriangle,
+  BarChart3,
   Droplets,
+  Info,
   Wind,
   Trash2,
   Plus,
@@ -15,7 +17,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  Building2
+  Building2,
+  TrendingDown,
+  TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
@@ -36,6 +40,82 @@ interface PollutionMarker {
   description: string;
   createdAt: string; // Fixed: Matches Prisma default
   is_anonymous: boolean;
+}
+
+interface ProvinceData {
+  name: string;
+  nameEn: string;
+  score: number;
+  transactions: number;
+  events: number;
+  newFarms: number;
+  violations: number;
+  frauds: number;
+}
+
+interface GreenIndexStats {
+  total: number;
+  averageScore: number;
+  greenCount: number;
+  yellowCount: number;
+  redCount: number;
+}
+
+const GREEN_INDEX_GEOJSON_URLS = [
+  '/vietnam-provinces.geojson',
+  'https://code.highcharts.com/mapdata/countries/vn/vn-all.geo.json',
+];
+
+function getGreenIndexScoreColor(score: number): string {
+  if (score > 60) {
+    const t = Math.min((score - 60) / 40, 1);
+    const g = Math.round(180 + t * 60);
+    return `rgb(${Math.round(34 - t * 20)}, ${g}, ${Math.round(60 + t * 20)})`;
+  }
+  if (score >= 30) {
+    const t = (score - 30) / 30;
+    const r = Math.round(239 - t * 100);
+    const g = Math.round(100 + t * 80);
+    return `rgb(${r}, ${g}, 30)`;
+  }
+  const t = score / 30;
+  return `rgb(${Math.round(180 + t * 59)}, ${Math.round(30 + t * 38)}, ${Math.round(30 + t * 38)})`;
+}
+
+function getGreenIndexScoreLabel(score: number): { text: string; emoji: string } {
+  if (score > 60) return { text: 'Tuần hoàn tốt', emoji: '🟢' };
+  if (score >= 30) return { text: 'Trung bình', emoji: '🟡' };
+  return { text: 'Ô nhiễm cao', emoji: '🔴' };
+}
+
+function stripDiacritics(str: string): string {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd');
+}
+
+function matchProvince(featureName: string, provinces: ProvinceData[]): ProvinceData | undefined {
+  if (!featureName) return undefined;
+  const normalized = featureName
+    .replace(/^(Tỉnh|Thành phố|TP\.?\s*)/i, '')
+    .replace(/[–—-]/g, ' ')
+    .trim()
+    .toLowerCase();
+  const normalizedAscii = stripDiacritics(normalized);
+
+  return provinces.find((province) => {
+    const pName = province.name.replace(/^(TP\.\s*)/i, '').replace(/[–—-]/g, ' ').trim().toLowerCase();
+    const pNameEn = province.nameEn.toLowerCase();
+    const pNameAscii = stripDiacritics(pName);
+
+    return pName === normalized
+      || pNameEn === normalized
+      || pNameAscii === normalizedAscii
+      || pName.includes(normalized)
+      || normalized.includes(pName)
+      || pNameEn.includes(normalized)
+      || normalized.includes(pNameEn)
+      || pNameAscii.includes(normalizedAscii)
+      || normalizedAscii.includes(pNameAscii);
+  });
 }
 
 // --- POI Types & Categories ---
@@ -164,6 +244,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const poiCacheRef = useRef<Map<string, POIItem[]>>(new Map());
   const poiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flyMoveEndHandlerRef = useRef<(() => void) | null>(null);
+  const greenIndexLayerRef = useRef<L.GeoJSON | null>(null);
 
   const [markers, setMarkers] = useState<PollutionMarker[]>([]);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -174,6 +255,14 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const [mapStyle, setMapStyle] = useState<'streets' | 'satellite'>('streets');
   const [isFlying, setIsFlying] = useState(false);
   const [flyDuration, setFlyDuration] = useState(1);
+  const [isGreenIndexMode, setIsGreenIndexMode] = useState(false);
+  const [greenIndexProvinces, setGreenIndexProvinces] = useState<ProvinceData[]>([]);
+  const [greenIndexStats, setGreenIndexStats] = useState<GreenIndexStats | null>(null);
+  const [greenIndexLoading, setGreenIndexLoading] = useState(false);
+  const [greenIndexGeoLoading, setGreenIndexGeoLoading] = useState(false);
+  const [showGreenLegend, setShowGreenLegend] = useState(true);
+  const [showGreenRanking, setShowGreenRanking] = useState(false);
+  const [selectedProvince, setSelectedProvince] = useState<ProvinceData | null>(null);
 
   // POI State
   const [showPOI, setShowPOI] = useState(false);
@@ -219,6 +308,47 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGreenIndex() {
+      setGreenIndexLoading(true);
+      try {
+        const res = await apiFetch('/api/green-index/provinces');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        setGreenIndexProvinces(Array.isArray(data?.provinces) ? data.provinces : []);
+        setGreenIndexStats(data?.stats ?? null);
+      } catch {
+        if (!cancelled) {
+          setGreenIndexProvinces([]);
+          setGreenIndexStats(null);
+        }
+      } finally {
+        if (!cancelled) setGreenIndexLoading(false);
+      }
+    }
+
+    loadGreenIndex();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isGreenIndexMode) {
+      setAddingMode(false);
+      setTempMarkerPos(null);
+      setSelectedMarker(null);
+      setShowPOI(false);
+      return;
+    }
+    setSelectedProvince(null);
+  }, [isGreenIndexMode]);
 
   // --- Highlight target marker with pulsating circle ---
   const highlightMarker = useCallback((lat: number, lng: number) => {
@@ -479,6 +609,106 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     };
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!isGreenIndexMode) {
+      greenIndexLayerRef.current?.remove();
+      greenIndexLayerRef.current = null;
+      setSelectedProvince(null);
+      setShowGreenRanking(false);
+      setGreenIndexGeoLoading(false);
+      return;
+    }
+
+    if (greenIndexProvinces.length === 0) return;
+
+    let cancelled = false;
+
+    const drawLayer = async () => {
+      setGreenIndexGeoLoading(true);
+      greenIndexLayerRef.current?.remove();
+      greenIndexLayerRef.current = null;
+
+      let geojsonData: any = null;
+      for (const url of GREEN_INDEX_GEOJSON_URLS) {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) continue;
+          const data = await resp.json();
+          if (data?.features?.length > 0) {
+            geojsonData = data;
+            break;
+          }
+        } catch {
+          // continue fallback sources
+        }
+      }
+
+      if (cancelled) return;
+      if (!geojsonData) {
+        setGreenIndexGeoLoading(false);
+        return;
+      }
+
+      const layer = L.geoJSON(geojsonData, {
+        style: (feature) => {
+          const name = feature?.properties?.ten_tinh
+            || feature?.properties?.name
+            || feature?.properties?.NAME_1
+            || feature?.properties?.shapeName
+            || '';
+          const province = matchProvince(name, greenIndexProvinces);
+          const score = province?.score ?? 50;
+
+          return {
+            fillColor: getGreenIndexScoreColor(score),
+            fillOpacity: 0.7,
+            color: '#1e293b',
+            weight: 1.5,
+            opacity: 0.8,
+          };
+        },
+        onEachFeature: (feature, layerFeature) => {
+          const name = feature?.properties?.ten_tinh
+            || feature?.properties?.name
+            || feature?.properties?.NAME_1
+            || feature?.properties?.shapeName
+            || 'Không rõ';
+          const province = matchProvince(name, greenIndexProvinces);
+          const score = province?.score ?? 50;
+          const label = getGreenIndexScoreLabel(score);
+
+          layerFeature.bindTooltip(
+            `<div style="text-align:center;font-family:sans-serif;"><div style="font-weight:700;font-size:13px;">${province?.name || name}</div><div style="font-size:20px;margin:4px 0;">${label.emoji} ${score}</div><div style="font-size:11px;color:#94a3b8;">${label.text}</div></div>`,
+            { sticky: true, className: 'green-index-tooltip' },
+          );
+
+          layerFeature.on('click', () => {
+            if (province) setSelectedProvince(province);
+          });
+          layerFeature.on('mouseover', () => {
+            (layerFeature as any).setStyle({ fillOpacity: 0.9, weight: 3, color: '#fff' });
+          });
+          layerFeature.on('mouseout', () => {
+            (layerFeature as any).setStyle({ fillOpacity: 0.7, weight: 1.5, color: '#1e293b' });
+          });
+        },
+      });
+
+      layer.addTo(map);
+      greenIndexLayerRef.current = layer;
+      setGreenIndexGeoLoading(false);
+    };
+
+    drawLayer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [greenIndexProvinces, isGreenIndexMode]);
+
   // --- POI Fetch Logic ---
   const fetchPOIs = useCallback(async (bounds: L.LatLngBounds, categories: Set<POICategory>) => {
     const south = bounds.getSouth();
@@ -563,7 +793,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!poiLayerRef.current) return;
     poiLayerRef.current.clearLayers();
 
-    if (!showPOI || poiItems.length === 0) return;
+    if (!showPOI || isGreenIndexMode || poiItems.length === 0) return;
 
     const currentZoom = mapRef.current?.getZoom() || 0;
     const showLabels = currentZoom >= 15;
@@ -598,12 +828,12 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       });
       m.addTo(poiLayerRef.current!);
     });
-  }, [poiItems, showPOI, activePoiCategories]);
+  }, [poiItems, showPOI, activePoiCategories, isGreenIndexMode]);
 
   // --- POI moveend/zoomend listener ---
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !showPOI) return;
+    if (!map || !showPOI || isGreenIndexMode) return;
 
     const handleMapMove = () => {
       const zoom = map.getZoom();
@@ -630,7 +860,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       map.off('zoomend', handleMapMove);
       if (poiDebounceRef.current) clearTimeout(poiDebounceRef.current);
     };
-  }, [showPOI, fetchPOIs, activePoiCategories]);
+  }, [showPOI, fetchPOIs, activePoiCategories, isGreenIndexMode]);
 
   const togglePoiCategory = (cat: POICategory) => {
     setActivePoiCategories(prev => {
@@ -664,6 +894,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const hasAutoFocused = useRef(false);
   useEffect(() => {
     if (!isMapLoaded || !mapRef.current || hasAutoFocused.current) return;
+    if (isGreenIndexMode) return;
     if (markers.length === 0) return; // Wait for markers to arrive
     hasAutoFocused.current = true;
 
@@ -736,7 +967,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
     performSmartFocus();
 
-  }, [isMapLoaded, markers]); // Re-run when markers arrive
+  }, [isMapLoaded, markers, isGreenIndexMode]); // Re-run when markers arrive
 
 
   // --- Handle Map Interactions ---
@@ -745,6 +976,10 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!map) return;
 
     const clickHandler = (e: L.LeafletMouseEvent) => {
+      if (isGreenIndexMode) {
+        setSelectedProvince(null);
+        return;
+      }
       if (addingMode) {
         setTempMarkerPos({ lat: e.latlng.lat, lng: e.latlng.lng });
       } else {
@@ -754,7 +989,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
     map.on('click', clickHandler);
     return () => { map.off('click', clickHandler); };
-  }, [addingMode]);
+  }, [addingMode, isGreenIndexMode]);
 
 
   // --- Render Markers ---
@@ -762,6 +997,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!mapRef.current || !markerLayerRef.current) return;
 
     markerLayerRef.current.clearLayers();
+    if (isGreenIndexMode) return;
 
     markers.forEach((marker, index) => {
       // Stagger delay for appear animation
@@ -797,7 +1033,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       m.addTo(markerLayerRef.current!);
     });
 
-  }, [markers]);
+  }, [markers, isGreenIndexMode]);
 
   // --- Render Temp Marker ---
   useEffect(() => {
@@ -914,7 +1150,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't capture when user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (addingMode) return;
+      if (addingMode || isGreenIndexMode) return;
 
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -927,7 +1163,9 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNavigateMarker, addingMode]);
+  }, [handleNavigateMarker, addingMode, isGreenIndexMode]);
+
+  const greenIndexRankings = [...greenIndexProvinces].sort((a, b) => b.score - a.score);
 
   return (
     <div className="relative w-full h-[calc(100vh-64px)] bg-slate-100 overflow-hidden select-none">
@@ -940,18 +1178,34 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
         @keyframes ping {
           75%, 100% { transform: scale(2); opacity: 0; }
         }
+        .green-index-tooltip {
+          background: rgba(15,23,42,0.95) !important;
+          border: 1px solid rgba(100,116,139,0.3) !important;
+          border-radius: 12px !important;
+          padding: 8px 14px !important;
+          color: #fff !important;
+          backdrop-filter: blur(8px);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+        }
+        .green-index-tooltip::before { display: none !important; }
+        .leaflet-tooltip-top:before, .leaflet-tooltip-bottom:before,
+        .leaflet-tooltip-left:before, .leaflet-tooltip-right:before {
+          border: none !important;
+        }
       `}</style>
 
       {/* Loading */}
       <AnimatePresence>
-        {!isMapLoaded && (
+        {(!isMapLoaded || (isGreenIndexMode && (greenIndexLoading || greenIndexGeoLoading))) && (
           <motion.div
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center z-50"
           >
             <Loader2 className="animate-spin text-emerald-500 mb-2" size={32} />
-            <span className="text-slate-500 font-medium">Đang tải bản đồ...</span>
+            <span className="text-slate-500 font-medium">
+              {!isMapLoaded ? 'Đang tải bản đồ...' : 'Đang tải dữ liệu Chỉ số xanh...'}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -974,7 +1228,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       {/* --- UI Controls --- */}
       <>
         {/* Marker Navigation Controls - Enhanced */}
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[400] flex flex-col items-center gap-1">
+        {!isGreenIndexMode && <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[400] flex flex-col items-center gap-1">
           {/* Flying indicator bar */}
           {isFlying && (
             <div className="w-32 h-1 bg-slate-200 rounded-full overflow-hidden mb-1">
@@ -1010,17 +1264,17 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
               <ChevronRight size={22} />
             </button>
           </div>
-        </div>
+        </div>}
 
         {/* Layer Toggle Buttons (Satellite/Streets + POI) */}
         <div className="absolute bottom-40 right-4 z-[400] sm:bottom-24 sm:right-14 flex flex-col gap-2">
-          <button
+          {!isGreenIndexMode && <button
             onClick={() => setShowPOI(prev => !prev)}
             className={`p-3 rounded-full shadow-lg transition-all active:scale-95 ${showPOI ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-white text-slate-600 hover:text-emerald-600 hover:bg-slate-50'}`}
             title={showPOI ? 'Ẩn địa điểm' : 'Hiện địa điểm'}
           >
             {isLoadingPOI ? <Loader2 size={20} className="animate-spin" /> : <Building2 size={20} />}
-          </button>
+          </button>}
           <button
             onClick={toggleMapStyle}
             className="bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-slate-50 transition-all active:scale-95"
@@ -1032,7 +1286,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
         {/* POI Category Filter Chips */}
         <AnimatePresence>
-          {showPOI && (
+          {showPOI && !isGreenIndexMode && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1079,6 +1333,21 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
         {/* Search & Title Card Container */}
         <div className="absolute top-4 left-4 z-[400] flex flex-col gap-3 w-full max-w-xs pointer-events-none">
+
+          <div className="pointer-events-auto bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-slate-200 p-1 flex items-center gap-1">
+            <button
+              onClick={() => setIsGreenIndexMode(false)}
+              className={`flex-1 px-3 py-2 text-xs rounded-full font-semibold transition-colors ${!isGreenIndexMode ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              Ô nhiễm
+            </button>
+            <button
+              onClick={() => setIsGreenIndexMode(true)}
+              className={`flex-1 px-3 py-2 text-xs rounded-full font-semibold transition-colors ${isGreenIndexMode ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              Chỉ số xanh
+            </button>
+          </div>
 
           {/* Search Box */}
           <div className="pointer-events-auto relative">
@@ -1129,10 +1398,10 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
           {/* Legend/Stats */}
           <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-slate-200 pointer-events-auto hidden sm:block">
             <h2 className="font-bold text-slate-900 flex items-center gap-2">
-              <AlertTriangle size={18} className="text-red-500" />
-              Bản đồ ô nhiễm
+              {!isGreenIndexMode ? <AlertTriangle size={18} className="text-red-500" /> : <BarChart3 size={18} className="text-emerald-500" />}
+              {!isGreenIndexMode ? 'Bản đồ ô nhiễm' : 'Bản đồ Chỉ số xanh'}
             </h2>
-            <div className="mt-4 space-y-2">
+            {!isGreenIndexMode && <div className="mt-4 space-y-2">
               <div className="flex justify-between items-center">
                 <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mức độ</div>
                 <div className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Live</div>
@@ -1144,12 +1413,95 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
                 <div className="flex-1 bg-orange-500" />
                 <div className="flex-1 bg-red-500" />
               </div>
-            </div>
+            </div>}
+            {isGreenIndexMode && <div className="mt-4 space-y-2 text-xs text-slate-600">
+              <div className="flex items-center justify-between">
+                <span>Điểm TB cả nước</span>
+                <span className="font-bold text-emerald-600">{greenIndexStats?.averageScore ?? '--'}</span>
+              </div>
+              <div className="text-[11px] text-slate-500">Xanh {'>'} 60 • Vàng 30–60 • Đỏ {'<'} 30</div>
+            </div>}
           </div>
         </div>
 
+        {isGreenIndexMode && greenIndexStats && (
+          <div className="absolute top-4 right-4 z-[400] flex w-[200px] flex-col gap-2">
+            <div className="rounded-xl border border-emerald-500/30 bg-slate-900/90 px-3 py-2 text-center backdrop-blur">
+              <div className="text-2xl font-black text-emerald-400">{greenIndexStats.averageScore}</div>
+              <div className="text-xs text-gray-400">Điểm TB cả nước</div>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-1 py-1.5 text-center">
+                <div className="text-sm font-bold text-green-400">{greenIndexStats.greenCount}</div>
+                <div className="text-[9px] text-gray-400">Xanh</div>
+              </div>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 px-1 py-1.5 text-center">
+                <div className="text-sm font-bold text-yellow-400">{greenIndexStats.yellowCount}</div>
+                <div className="text-[9px] text-gray-400">Vàng</div>
+              </div>
+              <div className="rounded-lg border border-red-500/30 bg-red-500/15 px-1 py-1.5 text-center">
+                <div className="text-sm font-bold text-red-400">{greenIndexStats.redCount}</div>
+                <div className="text-[9px] text-gray-400">Đỏ</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isGreenIndexMode && (
+          <div className="absolute bottom-6 left-4 z-[400]">
+            <button onClick={() => setShowGreenLegend((prev) => !prev)} className="mb-2 flex h-8 w-8 items-center justify-center rounded-full border border-slate-500/30 bg-slate-900/85 text-white" title="Bật/tắt chú thích Green Index">
+              <Info size={16} />
+            </button>
+            {showGreenLegend && (
+              <div className="min-w-[180px] rounded-xl border border-slate-500/30 bg-slate-900/90 p-3 backdrop-blur">
+                <div className="text-xs font-bold text-white mb-2">Thang màu Green Index</div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-4 rounded-sm bg-green-500" />
+                    <span className="text-xs text-gray-300">{'>'} 60: Tuần hoàn tốt</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-4 rounded-sm bg-amber-500" />
+                    <span className="text-xs text-gray-300">30–60: Trung bình</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-4 rounded-sm bg-red-500" />
+                    <span className="text-xs text-gray-300">{'<'} 30: Ô nhiễm cao</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isGreenIndexMode && (
+          <div className="absolute bottom-6 right-4 z-[400]">
+            <button onClick={() => setShowGreenRanking((prev) => !prev)} className={`flex h-10 w-10 items-center justify-center rounded-full border border-slate-500/30 text-white ${showGreenRanking ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-900/85 hover:bg-slate-800'}`} title="Bật/tắt xếp hạng tỉnh">
+              <BarChart3 size={18} />
+            </button>
+          </div>
+        )}
+
+        {isGreenIndexMode && showGreenRanking && (
+          <div className="absolute bottom-20 right-4 z-[400] max-h-[60vh] w-72 overflow-y-auto rounded-xl border border-slate-500/30 bg-slate-900/95 backdrop-blur">
+            <div className="sticky top-0 flex items-center gap-2 border-b border-slate-500/20 bg-slate-900/95 px-4 py-3 text-sm font-bold text-white">
+              <BarChart3 size={14} className="text-emerald-400" /> Xếp hạng tỉnh thành
+            </div>
+            {greenIndexRankings.map((province, index) => {
+              const label = getGreenIndexScoreLabel(province.score);
+              return (
+                <button key={province.name} onClick={() => { setSelectedProvince(province); setShowGreenRanking(false); }} className="flex w-full items-center gap-3 border-b border-slate-700/40 px-4 py-2.5 text-left transition-colors hover:bg-slate-800/50">
+                  <span className="text-xs text-gray-500 w-5 text-right font-mono">{index + 1}</span>
+                  <span className="text-sm text-white flex-1 truncate">{province.name}</span>
+                  <span className="text-xs font-bold text-emerald-300">{label.emoji} {province.score}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Add Mode Instruction */}
-        {addingMode && (
+        {addingMode && !isGreenIndexMode && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] w-[90%] md:w-auto">
             <div className="bg-slate-900 text-white px-6 py-3 rounded-full shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-4">
               <div className="flex items-center gap-2">
@@ -1171,7 +1523,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
         )}
 
         {/* Add Button */}
-        {!addingMode && !tempMarkerPos && (
+        {!addingMode && !tempMarkerPos && !isGreenIndexMode && (
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400]">
             <button
               onClick={handleStartAdd}
@@ -1188,7 +1540,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
       {/* Forms & Panels */}
       <AnimatePresence>
-        {addingMode && tempMarkerPos && (
+        {addingMode && tempMarkerPos && !isGreenIndexMode && (
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
@@ -1280,7 +1632,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       </AnimatePresence>
 
       <AnimatePresence>
-        {selectedMarker && !addingMode && (
+        {selectedMarker && !addingMode && !isGreenIndexMode && (
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
@@ -1357,6 +1709,54 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {isGreenIndexMode && selectedProvince && (
+        <div className="absolute left-1/2 top-1/2 z-[520] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-emerald-500/30 bg-slate-900/95 p-5 shadow-2xl backdrop-blur">
+          <button onClick={() => setSelectedProvince(null)} className="absolute top-3 right-3 text-gray-400 hover:text-white text-lg">✕</button>
+
+          <div className="text-center mb-4">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <MapPin size={16} className="text-emerald-400" />
+              <h3 className="text-lg font-bold text-white">{selectedProvince.name}</h3>
+            </div>
+            <div className="my-2 text-4xl font-black text-emerald-400">
+              {selectedProvince.score}
+            </div>
+            <div className="text-sm text-emerald-300">
+              {getGreenIndexScoreLabel(selectedProvince.score).emoji} {getGreenIndexScoreLabel(selectedProvince.score).text}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Chi tiết điểm</div>
+
+            <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 px-3 py-2">
+              <span className="text-xs text-gray-300 flex items-center gap-1.5"><TrendingUp size={12} className="text-green-400" /> Giao dịch thành công</span>
+              <span className="text-xs font-bold text-green-400">+{selectedProvince.transactions * 2} ({selectedProvince.transactions}x)</span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 px-3 py-2">
+              <span className="text-xs text-gray-300 flex items-center gap-1.5"><TrendingUp size={12} className="text-green-400" /> Sự kiện thu gom</span>
+              <span className="text-xs font-bold text-green-400">+{selectedProvince.events * 5} ({selectedProvince.events}x)</span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 px-3 py-2">
+              <span className="text-xs text-gray-300 flex items-center gap-1.5"><TrendingUp size={12} className="text-green-400" /> Nông hộ mới</span>
+              <span className="text-xs font-bold text-green-400">+{selectedProvince.newFarms} ({selectedProvince.newFarms}x)</span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-red-500/10 px-3 py-2">
+              <span className="text-xs text-gray-300 flex items-center gap-1.5"><TrendingDown size={12} className="text-red-400" /> Vi phạm đốt/vứt</span>
+              <span className="text-xs font-bold text-red-400">-{selectedProvince.violations * 5} ({selectedProvince.violations}x)</span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-red-500/10 px-3 py-2">
+              <span className="text-xs text-gray-300 flex items-center gap-1.5"><TrendingDown size={12} className="text-red-400" /> Gian lận chất lượng</span>
+              <span className="text-xs font-bold text-red-400">-{selectedProvince.frauds * 2} ({selectedProvince.frauds}x)</span>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

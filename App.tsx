@@ -25,11 +25,10 @@ import { MyListingsPage } from './components/pages/MyListingsPage';
 import { AdminLoginPage } from './components/pages/AdminLoginPage';
 import { AdminPage } from './components/pages/AdminPage';
 import { GreenTokenDashboard } from './components/pages/GreenTokenDashboard';
-import { GreenIndexMap } from './components/pages/GreenIndexMap';
 import { getAdminToken, setAdminToken } from '@/utils/adminAuth';
 
 // Types
-type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'my-listings' | 'product' | 'seller-profile' | 'admin-login' | 'admin' | 'green-tokens' | 'green-index';
+type Route = 'home' | 'marketplace' | 'map' | 'community' | 'login' | 'signup' | 'cart' | 'profile' | 'my-listings' | 'product' | 'seller-profile' | 'admin-login' | 'admin' | 'green-tokens';
 
 // URL path to Route mapping
 const pathToRoute: Record<string, Route> = {
@@ -48,7 +47,7 @@ const pathToRoute: Record<string, Route> = {
   '/admin': 'admin',
   '/admin/login': 'admin-login',
   '/green-tokens': 'green-tokens',
-  '/green-index': 'green-index',
+  '/green-index': 'map',
 };
 
 const routeToPath: Record<Route, string> = {
@@ -66,7 +65,6 @@ const routeToPath: Record<Route, string> = {
   admin: '/admin',
   'admin-login': '/admin/login',
   'green-tokens': '/green-tokens',
-  'green-index': '/green-index',
 };
 
 function getRouteFromPath(): { route: Route; productId: string | null; sellerId: string | null } {
@@ -365,12 +363,6 @@ export default function App() {
             >
               Cộng Đồng
             </button>
-            <button
-              onClick={() => navigate('green-index')}
-              className={`hover:text-emerald-600 transition-colors flex items-center gap-1 ${currentRoute === 'green-index' ? 'text-emerald-600' : 'text-slate-600'}`}
-            >
-              🗺️ Chỉ Số Xanh
-            </button>
           </nav>
 
           {/* Auth & Cart Actions */}
@@ -483,7 +475,6 @@ export default function App() {
             <button onClick={() => navigate('map')} className="block w-full text-left py-2 font-medium text-slate-600">Bản Đồ Ô Nhiễm</button>
             <button onClick={() => navigate('community')} className="block w-full text-left py-2 font-medium text-slate-600">Cộng Đồng</button>
             <button onClick={() => navigate('green-tokens')} className="block w-full text-left py-2 font-medium text-emerald-600">🌱 Green Token</button>
-            <button onClick={() => navigate('green-index')} className="block w-full text-left py-2 font-medium text-emerald-600">🗺️ Chỉ Số Xanh</button>
             <button onClick={() => navigate('cart')} className="flex items-center justify-between w-full py-2 font-medium text-slate-600">
               <span>Giỏ hàng</span>
               {cartCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{cartCount}</span>}
@@ -591,10 +582,6 @@ export default function App() {
           <GreenTokenDashboard user={user} onBack={() => navigate('home')} />
         )}
 
-        {currentRoute === 'green-index' && (
-          <GreenIndexMap onBack={() => navigate('home')} />
-        )}
-
         {currentRoute === 'my-listings' && !user && (
           <div className="p-10 text-center text-slate-500">Vui lòng đăng nhập để xem sản phẩm đã đăng.</div>
         )}
@@ -637,7 +624,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      {!isAdminRoute && currentRoute !== 'map' && currentRoute !== 'green-index' && (
+      {!isAdminRoute && currentRoute !== 'map' && (
         <footer className="bg-white border-t border-slate-200 py-12">
           <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>

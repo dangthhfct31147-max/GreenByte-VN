@@ -607,7 +607,17 @@ const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) =
   }, []);
 
   const medals = ['🥇', '🥈', '🥉', '4', '5'];
-  const getColor = (score: number) => score > 60 ? '#22c55e' : score >= 30 ? '#f59e0b' : '#ef4444';
+  const getScoreColorClass = (score: number) => score > 60 ? 'text-emerald-600' : score >= 30 ? 'text-amber-600' : 'text-red-500';
+  const getScoreBadgeClass = (score: number) => score > 60
+    ? 'bg-emerald-100 text-emerald-700'
+    : score >= 30
+      ? 'bg-amber-100 text-amber-700'
+      : 'bg-red-100 text-red-700';
+  const getScoreBarClass = (score: number) => score > 60
+    ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
+    : score >= 30
+      ? 'bg-gradient-to-r from-amber-400 to-amber-600'
+      : 'bg-gradient-to-r from-red-400 to-red-600';
   const getLabel = (score: number) => score > 60 ? 'Tuần hoàn tốt' : score >= 30 ? 'Trung bình' : 'Ô nhiễm cao';
 
   const now = new Date();
@@ -649,17 +659,11 @@ const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) =
             <motion.div
               key={province.name}
               variants={fadeInUp}
-              className="group relative flex items-center gap-4 p-5 rounded-2xl border border-slate-100 bg-white hover:shadow-xl hover:border-emerald-200 transition-all duration-300"
-              style={idx === 0 ? { borderColor: 'rgba(234,179,8,0.4)', background: 'linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)', boxShadow: '0 4px 20px rgba(234,179,8,0.1)' } : {}}
+              className={`group relative flex items-center gap-4 rounded-2xl border p-5 transition-all duration-300 hover:border-emerald-200 hover:shadow-xl ${idx === 0 ? 'border-amber-300 bg-amber-50/60 shadow-[0_4px_20px_rgba(234,179,8,0.1)]' : 'border-slate-100 bg-white'}`}
             >
               {/* Rank */}
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${idx < 3 ? 'text-2xl' : 'bg-slate-100 text-slate-500 font-bold text-lg'
-                }`} style={idx < 3 ? {
-                  background: idx === 0 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' :
-                    idx === 1 ? 'linear-gradient(135deg, #cbd5e1, #94a3b8)' :
-                      'linear-gradient(135deg, #fb923c, #ea580c)',
-                  boxShadow: `0 4px 12px ${idx === 0 ? 'rgba(245,158,11,0.3)' : idx === 1 ? 'rgba(148,163,184,0.3)' : 'rgba(234,88,12,0.3)'}`,
-                } : {}}>
+                } ${idx === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-500 shadow-[0_4px_12px_rgba(245,158,11,0.3)]' : idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-[0_4px_12px_rgba(148,163,184,0.3)]' : idx === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600 shadow-[0_4px_12px_rgba(234,88,12,0.3)]' : ''}`}>
                 {idx < 3 ? medals[idx] : medals[idx]}
               </div>
 
@@ -669,10 +673,7 @@ const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) =
                   <h4 className={`font-bold truncate ${idx === 0 ? 'text-lg text-slate-900' : 'text-base text-slate-800'}`}>
                     {province.name}
                   </h4>
-                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium" style={{
-                    background: `${getColor(province.score)}18`,
-                    color: getColor(province.score),
-                  }}>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${getScoreBadgeClass(province.score)}`}>
                     {getLabel(province.score)}
                   </span>
                 </div>
@@ -685,11 +686,10 @@ const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) =
                       whileInView={{ width: `${province.score}%` }}
                       viewport={{ once: true }}
                       transition={{ duration: 1, delay: idx * 0.15, ease: 'easeOut' }}
-                      className="h-full rounded-full"
-                      style={{ background: `linear-gradient(90deg, ${getColor(province.score)}aa, ${getColor(province.score)})` }}
+                      className={`h-full rounded-full ${getScoreBarClass(province.score)}`}
                     />
                   </div>
-                  <span className="text-sm font-bold shrink-0" style={{ color: getColor(province.score), minWidth: '36px', textAlign: 'right' }}>
+                  <span className={`w-9 shrink-0 text-right text-sm font-bold ${getScoreColorClass(province.score)}`}>
                     {province.score}
                   </span>
                 </div>
@@ -715,10 +715,10 @@ const ProvinceLeaderboardSection = ({ onNavigate }: { onNavigate: (route: any) =
           className="text-center mt-10"
         >
           <button
-            onClick={() => onNavigate('green-index')}
+            onClick={() => onNavigate('map')}
             className="group inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-full font-medium hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-emerald-500/25"
           >
-            🗺️ Xem bản đồ Chỉ Số Xanh toàn quốc
+            🗺️ Xem bản đồ Ô nhiễm + Chỉ Số Xanh
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
         </motion.div>
