@@ -334,7 +334,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Navigation */}
-      {!isAdminRoute && <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md">
+      {!isAdminRoute && <header className="sticky top-0 z-[9999] w-full border-b border-slate-200 bg-white/80 backdrop-blur-md">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('home')}>
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white">
