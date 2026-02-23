@@ -48,7 +48,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess, 
                         <ShieldCheck size={28} />
                         <h1 className="text-xl font-bold">Admin Portal</h1>
                     </div>
-                    <p className="text-sm text-slate-300">Quản trị toàn bộ hệ thống Eco-Byproduct VN</p>
+                    <p className="text-sm text-slate-300">Quản trị toàn bộ hệ thống GreenByte VN</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">

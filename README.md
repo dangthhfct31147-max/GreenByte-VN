@@ -1,4 +1,4 @@
-# Eco-Byproduct VN 🌿
+# GreenByte VN 🌿
 
 Sàn thương mại điện tử phụ phẩm nông nghiệp & Bản đồ ô nhiễm Việt Nam.
 
@@ -6,8 +6,8 @@ Sàn thương mại điện tử phụ phẩm nông nghiệp & Bản đồ ô nh
 
 1.  **Clone & Install**
     ```bash
-    git clone https://github.com/Homelessman123/Eco-product.git
-    cd eco-byproduct-vn
+    git clone https://github.com/Homelessman123/GreenByte.git
+    cd GreenByte
     npm install
     ```
 
@@ -37,7 +37,7 @@ Sàn thương mại điện tử phụ phẩm nông nghiệp & Bản đồ ô nh
 Set admin env vars in `.env`:
 
 ```bash
-ADMIN_EMAIL=admin@eco-byproduct.vn
+ADMIN_EMAIL=admin@greenbyte.vn
 ADMIN_PASSWORD=YourStrongPassword
 # Or use bcrypt hash instead:
 # ADMIN_PASSWORD_HASH=$2b$12$...
@@ -49,8 +49,8 @@ ADMIN_JWT_SECRET=another_long_random_secret
 Use `Dockerfile.admin` for an isolated admin frontend deployment:
 
 ```bash
-docker build -f Dockerfile.admin --build-arg VITE_API_URL=https://your-api.example.com -t eco-admin .
-docker run -p 8080:8080 eco-admin
+docker build -f Dockerfile.admin --build-arg VITE_API_URL=https://your-api.example.com -t greenbyte-admin .
+docker run -p 8080:8080 greenbyte-admin
 ```
 
 ## ⚡ Prisma Accelerate (Optional)
@@ -96,4 +96,4 @@ Prisma CLI commands (`prisma db push`, migrate, introspection, seed) use `DIRECT
 -   **Maps:** MapLibre GL JS.
 -   **Validation:** Zod.
 
-# Eco-product
+# GreenByte

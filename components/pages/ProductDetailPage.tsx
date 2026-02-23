@@ -224,7 +224,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         if (!product) return;
         const shareData = {
             title: product.title,
-            text: `Xem sản phẩm ${product.title} trên Eco-ByproductVN`,
+            text: `Xem sản phẩm ${product.title} trên GreenByte VN`,
             url: window.location.href,
         };
 

@@ -52,7 +52,7 @@ const EnvSchema = z.object({
         }),
     FRONTEND_ORIGIN: z.string().url(),
     JWT_SECRET: z.string().min(32),
-    TOTP_ISSUER: z.string().min(1).default('Eco-Byproduct VN'),
+    TOTP_ISSUER: z.string().min(1).default('GreenByte VN'),
     ADMIN_EMAIL: z.string().email().optional(),
     ADMIN_PASSWORD: z.string().min(8).optional(),
     ADMIN_PASSWORD_HASH: z.string().min(20).optional(),

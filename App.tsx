@@ -340,7 +340,7 @@ export default function App() {
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white">
               <Leaf size={20} fill="currentColor" />
             </div>
-            <span className="font-bold text-xl tracking-tight text-slate-900">Eco-Byproduct<span className="text-emerald-500">VN</span></span>
+            <span className="font-bold text-xl tracking-tight text-slate-900">GreenByte <span className="text-emerald-500">VN</span></span>
           </div>
 
           {/* Desktop Nav */}
@@ -632,7 +632,7 @@ export default function App() {
                 <div className="w-6 h-6 bg-slate-900 rounded flex items-center justify-center text-white">
                   <Leaf size={14} />
                 </div>
-                <span className="font-bold text-slate-900">Eco-Byproduct VN</span>
+                <span className="font-bold text-slate-900">GreenByte VN</span>
               </div>
               <p className="text-slate-500 text-sm leading-relaxed">
                 Kết nối nguồn lực, giảm thiểu rác thải, kiến tạo tương lai xanh cho nông nghiệp Việt Nam.
@@ -663,7 +663,7 @@ export default function App() {
             </div>
           </div>
           <div className="container mx-auto px-4 mt-12 pt-8 border-t border-slate-100 text-center text-slate-400 text-sm">
-            © 2024 Eco-Byproduct VN. Built with ❤️ for Vietnam Environment.
+            © 2024 GreenByte VN. Built with ❤️ for Vietnam Environment.
           </div>
         </footer>
       )}

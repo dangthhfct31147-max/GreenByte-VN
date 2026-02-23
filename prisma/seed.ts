@@ -318,13 +318,13 @@ async function main() {
     const passwordHash = await bcrypt.hash('DemoPass123!', 12);
 
     const demoSeller = await prisma.user.upsert({
-        where: { email: 'seller@eco-byproduct.vn' },
+        where: { email: 'seller@greenbyte.vn' },
         update: {
             name: 'Nông Dân Xanh',
             passwordHash,
         },
         create: {
-            email: 'seller@eco-byproduct.vn',
+            email: 'seller@greenbyte.vn',
             name: 'Nông Dân Xanh',
             passwordHash,
         },

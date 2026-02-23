@@ -429,7 +429,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ user, onLoginReque
 
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Eco Product - Bài thảo luận', text: shareText, url: shareUrl });
+        await navigator.share({ title: 'GreenByte VN - Bài thảo luận', text: shareText, url: shareUrl });
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl);
       }

@@ -171,7 +171,7 @@ export const SignupPage = ({
             {step === 1 ? 'Tạo tài khoản mới' : 'Xác nhận & Cam kết'}
           </h2>
           <p className="text-slate-500 text-sm mb-6">
-            {step === 1 ? 'Tham gia cộng đồng Eco-Byproduct VN ngay hôm nay.' : 'Chúng tôi đề cao tính trung thực và trách nhiệm.'}
+            {step === 1 ? 'Tham gia cộng đồng GreenByte VN ngay hôm nay.' : 'Chúng tôi đề cao tính trung thực và trách nhiệm.'}
           </p>
 
           <form onSubmit={handleNext}>
@@ -305,7 +305,7 @@ export const SignupPage = ({
                       <Check size={14} className="absolute text-white opacity-0 peer-checked:opacity-100 left-0.5 top-0.5 pointer-events-none" />
                     </div>
                     <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
-                      Tôi đồng ý với điều khoản sử dụng và chính sách bảo mật của Eco-Byproduct VN.
+                      Tôi đồng ý với điều khoản sử dụng và chính sách bảo mật của GreenByte VN.
                     </span>
                   </label>
                 </motion.div>
