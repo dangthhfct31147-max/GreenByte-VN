@@ -13,6 +13,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess, 
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const demoAdminEmail = String(import.meta.env.VITE_ADMIN_DEMO_EMAIL || 'admin@greenbyte.vn');
+    const demoAdminPassword = import.meta.env.VITE_ADMIN_DEMO_PASSWORD
+        ? String(import.meta.env.VITE_ADMIN_DEMO_PASSWORD)
+        : 'Giá trị ADMIN_PASSWORD trong file .env';
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -52,6 +56,16 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess, 
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                        <p className="font-semibold text-amber-950">Tài khoản demo admin</p>
+                        <p className="mt-1">
+                            Email: <span className="font-mono">{demoAdminEmail}</span>
+                        </p>
+                        <p>
+                            Mật khẩu: <span className="font-mono break-all">{demoAdminPassword}</span>
+                        </p>
+                    </div>
+
                     <div>
                         <label className="text-sm font-medium text-slate-700">Email admin</label>
                         <div className="mt-1 relative">

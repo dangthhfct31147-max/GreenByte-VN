@@ -42,6 +42,10 @@ ADMIN_PASSWORD=YourStrongPassword
 # Or use bcrypt hash instead:
 # ADMIN_PASSWORD_HASH=$2b$12$...
 ADMIN_JWT_SECRET=another_long_random_secret
+
+# Optional: show demo credentials directly in /admin/login UI
+VITE_ADMIN_DEMO_EMAIL=admin@greenbyte.vn
+VITE_ADMIN_DEMO_PASSWORD=YourStrongPassword
 ```
 
 ### Admin Docker (Railway)
