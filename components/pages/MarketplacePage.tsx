@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Filter,
@@ -11,7 +11,8 @@ import {
   Image as ImageIcon,
   Loader2,
   Check,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
@@ -62,8 +63,36 @@ interface VisionSuggestion {
   evidence: string[];
 }
 
+interface SellerAssistantGuidance {
+  assistant_message: string;
+  normalized_description: string;
+  quality_standards: string[];
+  missing_fields: string[];
+  warnings: string[];
+  suggested_title?: string;
+}
+
+interface AssistantTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
 const DEFAULT_PRODUCT_IMAGE = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%22800%22 viewBox=%220 0 1200 800%22%3E%3Crect width=%221200%22 height=%22800%22 fill=%22%23e2e8f0%22/%3E%3Cg fill=%22%2394a3b8%22%3E%3Ccircle cx=%22600%22 cy=%22310%22 r=%2260%22/%3E%3Cpath d=%22M430 520c40-78 104-118 170-118s130 40 170 118z%22/%3E%3C/g%3E%3Ctext x=%22600%22 y=%22620%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2236%22 fill=%2264748b%22%3EAnh san pham%3C/text%3E%3C/svg%3E';
+
+const DEFAULT_CREATE_FORM = {
+  title: '',
+  price: '',
+  quality_score: '3',
+  unit: 'kg',
+  category: 'Rơm rạ',
+  location: 'Hồ Chí Minh',
+  latitude: '',
+  longitude: '',
+  image: 'https://images.unsplash.com/photo-1595835018335-508b5252834b?q=80&w=600&auto=format&fit=crop',
+  co2_savings_kg: '10',
+  description: ''
+};
 
 // --- Components ---
 
@@ -550,22 +579,89 @@ ProductCard.displayName = 'ProductCard';
 const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSubmit: (p: Product) => void, user: any }> = ({ isOpen, onClose, onSubmit, user }) => {
   const [loading, setLoading] = useState(false);
   const [isClassifying, setIsClassifying] = useState(false);
+  const [isAssisting, setIsAssisting] = useState(false);
   const [classifyError, setClassifyError] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
   const [visionSuggestion, setVisionSuggestion] = useState<VisionSuggestion | null>(null);
   const [visionProvider, setVisionProvider] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    price: '',
-    quality_score: '3',
-    unit: 'kg',
-    category: 'Rơm rạ',
-    location: 'Hồ Chí Minh',
-    latitude: '',
-    longitude: '',
-    image: 'https://images.unsplash.com/photo-1595835018335-508b5252834b?q=80&w=600&auto=format&fit=crop',
-    co2_savings_kg: '10',
-    description: ''
-  });
+  const [assistantProvider, setAssistantProvider] = useState<string | null>(null);
+  const [assistantGuidance, setAssistantGuidance] = useState<SellerAssistantGuidance | null>(null);
+  const [assistantInput, setAssistantInput] = useState('');
+  const [assistantConversation, setAssistantConversation] = useState<AssistantTurn[]>([]);
+  const [hasAutoAssistantRun, setHasAutoAssistantRun] = useState(false);
+  const [formData, setFormData] = useState(DEFAULT_CREATE_FORM);
+  const lastAutoRefreshSignatureRef = useRef<string>('');
+
+  const unresolvedAiMissingFields = useMemo(() => {
+    const missing = assistantGuidance?.missing_fields ?? [];
+    const hasText = (value: string) => value.trim().length > 0;
+    const hasPositiveNumber = (value: string) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0;
+    };
+
+    return missing.filter((label) => {
+      const normalized = label.toLowerCase();
+
+      if (normalized.includes('tiêu đề')) return !hasText(formData.title);
+      if (normalized.includes('giá')) return !hasPositiveNumber(formData.price);
+      if (normalized.includes('đơn vị')) return !hasText(formData.unit);
+      if (normalized.includes('danh mục')) return !hasText(formData.category);
+      if (normalized.includes('khu vực')) return !hasText(formData.location);
+      if (normalized.includes('ảnh')) return !hasText(formData.image);
+      if (normalized.includes('mô tả')) return !hasText(formData.description);
+      if (normalized.includes('co2') || normalized.includes('co₂')) return !hasPositiveNumber(formData.co2_savings_kg);
+
+      return true;
+    });
+  }, [assistantGuidance?.missing_fields, formData.category, formData.co2_savings_kg, formData.description, formData.image, formData.location, formData.price, formData.title, formData.unit]);
+
+  const shouldBlockSubmitByAi = unresolvedAiMissingFields.length > 0;
+
+  const assistantDraftSignature = useMemo(() => JSON.stringify({
+    title: formData.title.trim(),
+    price: formData.price.trim(),
+    quality_score: formData.quality_score.trim(),
+    unit: formData.unit.trim(),
+    category: formData.category.trim(),
+    location: formData.location.trim(),
+    image: formData.image.trim(),
+    co2_savings_kg: formData.co2_savings_kg.trim(),
+    description: formData.description.trim(),
+  }), [formData.category, formData.co2_savings_kg, formData.description, formData.image, formData.location, formData.price, formData.quality_score, formData.title, formData.unit]);
+
+  const hasDraftChangedForAutoRefresh = useMemo(() => {
+    return assistantDraftSignature !== JSON.stringify({
+      title: DEFAULT_CREATE_FORM.title,
+      price: DEFAULT_CREATE_FORM.price,
+      quality_score: DEFAULT_CREATE_FORM.quality_score,
+      unit: DEFAULT_CREATE_FORM.unit,
+      category: DEFAULT_CREATE_FORM.category,
+      location: DEFAULT_CREATE_FORM.location,
+      image: DEFAULT_CREATE_FORM.image,
+      co2_savings_kg: DEFAULT_CREATE_FORM.co2_savings_kg,
+      description: DEFAULT_CREATE_FORM.description,
+    });
+  }, [assistantDraftSignature]);
+
+  const buildDraftPayload = () => {
+    const parseOptionalInt = (value: string) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
+    return {
+      title: formData.title.trim() || undefined,
+      price: parseOptionalInt(formData.price),
+      quality_score: parseOptionalInt(formData.quality_score),
+      unit: formData.unit.trim() || undefined,
+      category: formData.category.trim() || undefined,
+      location: formData.location.trim() || undefined,
+      image: formData.image.trim() || undefined,
+      co2_savings_kg: parseOptionalInt(formData.co2_savings_kg),
+      description: formData.description.trim() || undefined,
+    };
+  };
 
   const handleClassifyImage = async () => {
     if (!user) {
@@ -615,12 +711,143 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     }));
   };
 
+  const requestSellerAssistant = async (message: string, conversationInput: AssistantTurn[], appendUserTurn: boolean) => {
+    setAssistantError(null);
+    setIsAssisting(true);
+
+    const nextConversation = appendUserTurn
+      ? [...conversationInput, { role: 'user' as const, content: message }]
+      : conversationInput;
+
+    if (appendUserTurn) {
+      setAssistantConversation(nextConversation);
+    }
+
+    try {
+      const res = await apiFetch('products/seller-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          draft: buildDraftPayload(),
+          conversation: nextConversation.slice(-6),
+        }),
+      });
+
+      const data = (await res.json()) as any;
+      if (!res.ok) throw new Error(data?.error ?? 'Không thể gọi AI trợ lý');
+
+      const guidance = data?.guidance as SellerAssistantGuidance;
+      if (!guidance || typeof guidance.assistant_message !== 'string') {
+        throw new Error('Phản hồi AI không hợp lệ');
+      }
+
+      setAssistantGuidance(guidance);
+      setAssistantProvider(typeof data?.provider === 'string' ? data.provider : null);
+      setAssistantConversation((prev) => [...prev, { role: 'assistant', content: guidance.assistant_message }]);
+    } catch (err: any) {
+      setAssistantError(err?.message ?? 'AI trợ lý tạm thời bận, vui lòng thử lại.');
+    } finally {
+      setIsAssisting(false);
+    }
+  };
+
+  const handleSellerAssistant = async () => {
+    if (!user) {
+      alert('Vui lòng đăng nhập để dùng AI trợ lý đăng bán.');
+      return;
+    }
+
+    const message = assistantInput.trim();
+    if (!message) {
+      setAssistantError('Vui lòng nhập câu hỏi hoặc yêu cầu cho trợ lý AI.');
+      return;
+    }
+
+    setAssistantInput('');
+    await requestSellerAssistant(message, assistantConversation, true);
+  };
+
+  const handleRefreshAssistantChecklist = async () => {
+    if (!user) {
+      alert('Vui lòng đăng nhập để dùng AI trợ lý đăng bán.');
+      return;
+    }
+
+    await requestSellerAssistant(
+      'Hãy quét lại toàn bộ thông tin hiện tại và cập nhật checklist còn thiếu trước khi đăng tin.',
+      assistantConversation,
+      false,
+    );
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setHasAutoAssistantRun(false);
+      lastAutoRefreshSignatureRef.current = '';
+      return;
+    }
+
+    if (!user || hasAutoAssistantRun || isAssisting) {
+      return;
+    }
+
+    setHasAutoAssistantRun(true);
+
+    void requestSellerAssistant(
+      'Hãy kiểm tra nhanh thông tin hiện có và cho tôi checklist cần điền trước khi đăng tin.',
+      [],
+      false,
+    );
+  }, [hasAutoAssistantRun, isAssisting, isOpen, user]);
+
+  useEffect(() => {
+    if (!isOpen || !user || !hasAutoAssistantRun || isAssisting) {
+      return;
+    }
+
+    if (!hasDraftChangedForAutoRefresh) {
+      return;
+    }
+
+    if (assistantDraftSignature === lastAutoRefreshSignatureRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      lastAutoRefreshSignatureRef.current = assistantDraftSignature;
+      void requestSellerAssistant(
+        'Hãy cập nhật checklist còn thiếu theo dữ liệu tôi vừa chỉnh sửa.',
+        assistantConversation,
+        false,
+      );
+    }, 18000);
+
+    return () => window.clearTimeout(timer);
+  }, [assistantConversation, assistantDraftSignature, hasAutoAssistantRun, hasDraftChangedForAutoRefresh, isAssisting, isOpen, user]);
+
+  const applyAssistantGuidance = () => {
+    if (!assistantGuidance) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      title: assistantGuidance.suggested_title?.trim() ? assistantGuidance.suggested_title : prev.title,
+      description: assistantGuidance.normalized_description?.trim() ? assistantGuidance.normalized_description : prev.description,
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       alert('Vui lòng đăng nhập để đăng tin.');
       return;
     }
+
+    if (shouldBlockSubmitByAi) {
+      alert(`AI trợ lý phát hiện còn thiếu thông tin: ${unresolvedAiMissingFields.join(', ')}.`);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -645,19 +872,13 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       if (!res.ok) throw new Error(data?.error ?? 'Đăng tin thất bại');
 
       onSubmit(data.product as Product);
-      setFormData({
-        title: '',
-        price: '',
-        quality_score: '3',
-        unit: 'kg',
-        category: 'Rơm rạ',
-        location: 'Hồ Chí Minh',
-        latitude: '',
-        longitude: '',
-        image: 'https://images.unsplash.com/photo-1595835018335-508b5252834b?q=80&w=600&auto=format&fit=crop',
-        co2_savings_kg: '10',
-        description: '',
-      });
+      setFormData(DEFAULT_CREATE_FORM);
+      setAssistantConversation([]);
+      setAssistantGuidance(null);
+      setAssistantProvider(null);
+      setAssistantInput('');
+      setAssistantError(null);
+      lastAutoRefreshSignatureRef.current = '';
     } catch (err: any) {
       alert(err?.message ?? 'Có lỗi xảy ra');
     } finally {
@@ -754,6 +975,112 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                       className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-white font-medium hover:bg-emerald-700"
                     >
                       Áp dụng gợi ý vào tin đăng
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-800">AI trợ lý đăng bán (Tiếng Việt đơn giản)</div>
+                  {assistantProvider && <span className="text-[11px] text-slate-500">Nguồn: {assistantProvider}</span>}
+                </div>
+
+                {assistantConversation.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-2 rounded-md border border-slate-200 bg-white p-2">
+                    {assistantConversation.slice(-6).map((turn, idx) => (
+                      <div
+                        key={`${turn.role}-${idx}`}
+                        className={`text-xs rounded-md px-2 py-1 ${turn.role === 'assistant'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}
+                      >
+                        {turn.role === 'assistant' ? 'AI: ' : 'Bạn: '}
+                        {turn.content}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={assistantInput}
+                    onChange={(e) => setAssistantInput(e.target.value)}
+                    placeholder="Ví dụ: Giúp tôi viết mô tả dễ hiểu cho người mua"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSellerAssistant()}
+                    disabled={isAssisting}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-60"
+                  >
+                    {isAssisting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    Gửi AI
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRefreshAssistantChecklist()}
+                    disabled={isAssisting}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-60"
+                  >
+                    {isAssisting ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Làm mới checklist
+                  </button>
+                </div>
+
+                {assistantError && <p className="text-xs text-rose-600">{assistantError}</p>}
+
+                {assistantGuidance && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 text-xs text-slate-700 space-y-2">
+                    {assistantGuidance.normalized_description && (
+                      <div>
+                        <div className="font-medium text-emerald-800">Mô tả đã chuẩn hoá</div>
+                        <p className="mt-1 whitespace-pre-wrap">{assistantGuidance.normalized_description}</p>
+                      </div>
+                    )}
+
+                    {assistantGuidance.quality_standards?.length > 0 && (
+                      <div>
+                        <div className="font-medium text-slate-800">Gợi ý tiêu chuẩn chất lượng</div>
+                        <ul className="mt-1 list-disc pl-5 space-y-1">
+                          {assistantGuidance.quality_standards.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {assistantGuidance.missing_fields?.length > 0 && (
+                      <div>
+                        <div className="font-medium text-rose-700">Thiếu thông tin cần bổ sung</div>
+                        <ul className="mt-1 list-disc pl-5 space-y-1 text-rose-700">
+                          {assistantGuidance.missing_fields.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {assistantGuidance.warnings?.length > 0 && (
+                      <div>
+                        <div className="font-medium text-amber-700">Cảnh báo dữ liệu</div>
+                        <ul className="mt-1 list-disc pl-5 space-y-1 text-amber-700">
+                          {assistantGuidance.warnings.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={applyAssistantGuidance}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-white font-medium hover:bg-emerald-700"
+                    >
+                      Áp dụng mô tả chuẩn hoá
                     </button>
                   </div>
                 )}
@@ -901,11 +1228,20 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || shouldBlockSubmitByAi}
                 className="w-full bg-slate-900 text-white py-3 rounded-xl font-medium hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
               >
-                {loading ? <Loader2 className="animate-spin" size={20} /> : <><Check size={18} /> Đăng tin ngay</>}
+                {loading
+                  ? <Loader2 className="animate-spin" size={20} />
+                  : shouldBlockSubmitByAi
+                    ? <><X size={18} /> Bổ sung thông tin còn thiếu</>
+                    : <><Check size={18} /> Đăng tin ngay</>}
               </button>
+              {shouldBlockSubmitByAi && (
+                <p className="text-xs text-rose-600">
+                  Cần bổ sung trước khi đăng: {unresolvedAiMissingFields.join(', ')}.
+                </p>
+              )}
             </form>
           </motion.div>
         </div>

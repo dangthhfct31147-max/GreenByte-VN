@@ -4,6 +4,7 @@ import { prisma } from '../prisma';
 import { optionalAuth, requireAuth, type AuthenticatedRequest } from '../middleware/auth';
 import { cacheGet, cacheSet, cacheDelete, CACHE_KEYS, CACHE_TTL } from '../cache';
 import { classifyByproductFromImage } from '../lib/byproductVision';
+import { generateSellerAssistantGuidance } from '../lib/sellerAssistant';
 
 export const productsRouter = Router();
 
@@ -68,6 +69,32 @@ const ClassifyImageSchema = z.object({
     image: z.string().url().max(1000),
     title: z.string().max(200).optional(),
     description: z.string().max(1000).optional(),
+});
+
+const SellerAssistantSchema = z.object({
+    message: z.string().trim().min(1).max(500),
+    draft: z
+        .object({
+            title: z.string().max(200).optional(),
+            price: z.number().int().min(0).max(1_000_000_000).optional(),
+            quality_score: z.number().int().min(1).max(5).optional(),
+            unit: z.string().max(30).optional(),
+            category: z.string().max(50).optional(),
+            location: z.string().max(120).optional(),
+            image: z.string().url().max(500).optional(),
+            co2_savings_kg: z.number().int().min(0).max(1_000_000).optional(),
+            description: z.string().max(2000).optional(),
+        })
+        .optional(),
+    conversation: z
+        .array(
+            z.object({
+                role: z.enum(['user', 'assistant']),
+                content: z.string().max(500),
+            }),
+        )
+        .max(8)
+        .optional(),
 });
 
 async function buildSellerRankings(limit: number) {
@@ -273,6 +300,26 @@ productsRouter.post('/classify-image', requireAuth, async (req: AuthenticatedReq
 
         return res.json({
             suggestion: result.suggestion,
+            provider: result.provider,
+            model: result.model,
+        });
+    } catch (err) {
+        return next(err);
+    }
+});
+
+productsRouter.post('/seller-assistant', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const body = SellerAssistantSchema.parse(req.body);
+
+        const result = await generateSellerAssistantGuidance({
+            message: body.message,
+            draft: body.draft,
+            conversation: body.conversation,
+        });
+
+        return res.json({
+            guidance: result.guidance,
             provider: result.provider,
             model: result.model,
         });
