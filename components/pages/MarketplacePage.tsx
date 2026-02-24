@@ -589,6 +589,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   const [assistantInput, setAssistantInput] = useState('');
   const [assistantConversation, setAssistantConversation] = useState<AssistantTurn[]>([]);
   const [hasAutoAssistantRun, setHasAutoAssistantRun] = useState(false);
+  const [autoRefreshChecklistEnabled, setAutoRefreshChecklistEnabled] = useState(true);
   const [formData, setFormData] = useState(DEFAULT_CREATE_FORM);
   const lastAutoRefreshSignatureRef = useRef<string>('');
 
@@ -802,7 +803,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   }, [hasAutoAssistantRun, isAssisting, isOpen, user]);
 
   useEffect(() => {
-    if (!isOpen || !user || !hasAutoAssistantRun || isAssisting) {
+    if (!isOpen || !user || !hasAutoAssistantRun || isAssisting || !autoRefreshChecklistEnabled) {
       return;
     }
 
@@ -824,7 +825,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     }, 18000);
 
     return () => window.clearTimeout(timer);
-  }, [assistantConversation, assistantDraftSignature, hasAutoAssistantRun, hasDraftChangedForAutoRefresh, isAssisting, isOpen, user]);
+  }, [assistantConversation, assistantDraftSignature, autoRefreshChecklistEnabled, hasAutoAssistantRun, hasDraftChangedForAutoRefresh, isAssisting, isOpen, user]);
 
   const applyAssistantGuidance = () => {
     if (!assistantGuidance) return;
@@ -878,6 +879,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       setAssistantProvider(null);
       setAssistantInput('');
       setAssistantError(null);
+      setAutoRefreshChecklistEnabled(true);
       lastAutoRefreshSignatureRef.current = '';
     } catch (err: any) {
       alert(err?.message ?? 'Có lỗi xảy ra');
@@ -983,7 +985,18 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold text-slate-800">AI trợ lý đăng bán (Tiếng Việt đơn giản)</div>
-                  {assistantProvider && <span className="text-[11px] text-slate-500">Nguồn: {assistantProvider}</span>}
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-1 text-[11px] text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={autoRefreshChecklistEnabled}
+                        onChange={(e) => setAutoRefreshChecklistEnabled(e.target.checked)}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      Tự làm mới checklist
+                    </label>
+                    {assistantProvider && <span className="text-[11px] text-slate-500">Nguồn: {assistantProvider}</span>}
+                  </div>
                 </div>
 
                 {assistantConversation.length > 0 && (
