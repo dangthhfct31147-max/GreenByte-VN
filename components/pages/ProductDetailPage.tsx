@@ -19,6 +19,19 @@ import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
 import { AppSelect } from '../ui/AppSelect';
 
+interface AiAssessment {
+    provider: string;
+    model: string;
+    category: string;
+    moisture_state: 'KHÔ' | 'ẨM' | 'ƯỚT' | 'KHÔNG_RÕ';
+    impurity_level: 'THẤP' | 'TRUNG_BÌNH' | 'CAO' | 'KHÔNG_RÕ';
+    confidence: number;
+    recommended_quality_score: number;
+    summary: string;
+    evidence: string[];
+    captured_at: string;
+}
+
 export interface Product {
     id: string;
     title: string;
@@ -40,6 +53,7 @@ export interface Product {
     review_count?: number;
     description?: string;
     posted_at: string;
+    ai_assessment?: AiAssessment | null;
 }
 
 interface ReviewItem {
@@ -484,6 +498,38 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                             <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
                                 {product.description || 'Chưa có mô tả chi tiết cho sản phẩm này.'}
                             </p>
+                        </div>
+
+                        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                            <h3 className="text-lg font-semibold text-slate-900 mb-2">AI chứng thực hình ảnh</h3>
+                            {product.ai_assessment ? (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-slate-700">
+                                        <div>Loại phụ phẩm: <span className="font-semibold">{product.ai_assessment.category}</span></div>
+                                        <div>Độ tin cậy: <span className="font-semibold">{Math.round((product.ai_assessment.confidence ?? 0) * 100)}%</span></div>
+                                        <div>Trạng thái ẩm: <span className="font-semibold">{product.ai_assessment.moisture_state}</span></div>
+                                        <div>Mức tạp chất: <span className="font-semibold">{product.ai_assessment.impurity_level}</span></div>
+                                        <div>Chất lượng AI đề xuất: <span className="font-semibold">{product.ai_assessment.recommended_quality_score}/5</span></div>
+                                        <div>Thời điểm ghi nhận: <span className="font-semibold">{formatDate(product.ai_assessment.captured_at)}</span></div>
+                                    </div>
+
+                                    <p className="text-sm text-slate-600">{product.ai_assessment.summary}</p>
+
+                                    {Array.isArray(product.ai_assessment.evidence) && product.ai_assessment.evidence.length > 0 && (
+                                        <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                            {product.ai_assessment.evidence.map((item, idx) => (
+                                                <li key={`${item}-${idx}`}>{item}</li>
+                                            ))}
+                                        </ul>
+                                    )}
+
+                                    <div className="text-xs text-slate-500">
+                                        Nguồn AI: {product.ai_assessment.provider} · Model: {product.ai_assessment.model}
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-slate-500">Tin đăng này chưa có dữ liệu chứng thực AI.</p>
+                            )}
                         </div>
 
                         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white">

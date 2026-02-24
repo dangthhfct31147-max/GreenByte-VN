@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { optionalAuth, requireAuth, type AuthenticatedRequest } from '../middleware/auth';
 import { cacheGet, cacheSet, cacheDelete, CACHE_KEYS, CACHE_TTL } from '../cache';
+import { classifyByproductFromImage } from '../lib/byproductVision';
 
 export const productsRouter = Router();
 
@@ -61,6 +62,12 @@ const ProductListQuerySchema = z.object({
     userLat: z.coerce.number().min(-90).max(90).optional(),
     userLng: z.coerce.number().min(-180).max(180).optional(),
     sort: z.enum(['newest', 'price_asc', 'price_desc', 'quality_desc', 'distance_asc']).optional(),
+});
+
+const ClassifyImageSchema = z.object({
+    image: z.string().url().max(1000),
+    title: z.string().max(200).optional(),
+    description: z.string().max(1000).optional(),
 });
 
 async function buildSellerRankings(limit: number) {
@@ -250,6 +257,25 @@ productsRouter.get('/', async (req, res, next) => {
         await cacheSet(cacheKey, JSON.stringify(response), CACHE_TTL.productsList);
 
         return res.json(response);
+    } catch (err) {
+        return next(err);
+    }
+});
+
+productsRouter.post('/classify-image', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const body = ClassifyImageSchema.parse(req.body);
+        const result = await classifyByproductFromImage({
+            imageUrl: body.image,
+            title: body.title,
+            description: body.description,
+        });
+
+        return res.json({
+            suggestion: result.suggestion,
+            provider: result.provider,
+            model: result.model,
+        });
     } catch (err) {
         return next(err);
     }
@@ -880,7 +906,10 @@ productsRouter.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res, 
 
         const product = await (prisma.product as any).findFirst({
             where: { id, deletedAt: null },
-            include: { seller: { select: { id: true, name: true, sellerVerified: true } } },
+            include: {
+                seller: { select: { id: true, name: true, sellerVerified: true } },
+                aiAssessment: true,
+            },
         } as any);
 
         if (!product) {
@@ -927,6 +956,27 @@ productsRouter.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res, 
                 co2_savings_kg: product.co2SavingsKg,
                 description: product.description ?? undefined,
                 posted_at: product.createdAt,
+                ai_assessment: product.aiAssessment
+                    ? {
+                        provider: product.aiAssessment.provider,
+                        model: product.aiAssessment.model,
+                        category: product.aiAssessment.category,
+                        moisture_state: product.aiAssessment.moistureState,
+                        impurity_level: product.aiAssessment.impurityLevel,
+                        confidence: Number(product.aiAssessment.confidence ?? 0),
+                        recommended_quality_score: product.aiAssessment.recommendedQualityScore,
+                        summary: product.aiAssessment.summary,
+                        evidence: (() => {
+                            try {
+                                const parsed = JSON.parse(product.aiAssessment.evidenceJson);
+                                return Array.isArray(parsed) ? parsed : [];
+                            } catch {
+                                return [];
+                            }
+                        })(),
+                        captured_at: product.aiAssessment.createdAt,
+                    }
+                    : null,
             },
         };
 
@@ -1012,6 +1062,12 @@ productsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res, nex
         const body = CreateProductSchema.parse(req.body);
         const userId = req.user!.id;
 
+        const aiAssessment = await classifyByproductFromImage({
+            imageUrl: body.image,
+            title: body.title,
+            description: body.description,
+        });
+
         const created = await (prisma.product as any).create({
             data: {
                 title: body.title,
@@ -1026,8 +1082,25 @@ productsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res, nex
                 co2SavingsKg: body.co2_savings_kg,
                 description: body.description,
                 sellerId: userId,
+                aiAssessment: {
+                    create: {
+                        provider: aiAssessment.provider,
+                        model: aiAssessment.model,
+                        category: aiAssessment.suggestion.category,
+                        moistureState: aiAssessment.suggestion.moisture_state,
+                        impurityLevel: aiAssessment.suggestion.impurity_level,
+                        confidence: aiAssessment.suggestion.confidence,
+                        recommendedQualityScore: aiAssessment.suggestion.recommended_quality_score,
+                        summary: aiAssessment.suggestion.summary,
+                        evidenceJson: JSON.stringify(aiAssessment.suggestion.evidence ?? []),
+                        imageUrl: body.image,
+                        inputTitle: body.title,
+                        inputDescription: body.description,
+                        rawJson: JSON.stringify(aiAssessment.suggestion),
+                    },
+                },
             },
-            include: { seller: { select: { id: true, name: true } } },
+            include: { seller: { select: { id: true, name: true } }, aiAssessment: true },
         } as any);
 
         res.status(201).json({
@@ -1047,6 +1120,27 @@ productsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res, nex
                 co2_savings_kg: created.co2SavingsKg,
                 description: created.description ?? undefined,
                 posted_at: humanizeFromDate(created.createdAt),
+                ai_assessment: created.aiAssessment
+                    ? {
+                        provider: created.aiAssessment.provider,
+                        model: created.aiAssessment.model,
+                        category: created.aiAssessment.category,
+                        moisture_state: created.aiAssessment.moistureState,
+                        impurity_level: created.aiAssessment.impurityLevel,
+                        confidence: Number(created.aiAssessment.confidence ?? 0),
+                        recommended_quality_score: created.aiAssessment.recommendedQualityScore,
+                        summary: created.aiAssessment.summary,
+                        evidence: (() => {
+                            try {
+                                const parsed = JSON.parse(created.aiAssessment.evidenceJson);
+                                return Array.isArray(parsed) ? parsed : [];
+                            } catch {
+                                return [];
+                            }
+                        })(),
+                        captured_at: created.aiAssessment.createdAt,
+                    }
+                    : null,
             },
         });
 

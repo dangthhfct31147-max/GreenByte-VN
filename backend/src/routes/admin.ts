@@ -25,6 +25,8 @@ const ListQuerySchema = z.object({
     take: z.coerce.number().int().min(1).max(500).optional(),
     search: z.string().optional(),
     includeDeleted: z.coerce.boolean().optional(),
+    lowConfidenceOnly: z.coerce.boolean().optional(),
+    aiConfidenceLte: z.coerce.number().min(0).max(1).optional(),
 });
 
 const AuditQuerySchema = z.object({
@@ -37,7 +39,8 @@ const AuditQuerySchema = z.object({
 const ModerationQueueQuerySchema = z.object({
     take: z.coerce.number().int().min(1).max(200).optional(),
     search: z.string().optional(),
-    resource: z.enum(['posts', 'events', 'pollution']).optional(),
+    resource: z.enum(['posts', 'events', 'pollution', 'products']).optional(),
+    sort: z.enum(['newest', 'risk_desc']).optional(),
 });
 
 const ModerateDecisionSchema = z.object({
@@ -46,6 +49,11 @@ const ModerateDecisionSchema = z.object({
 
 const UserLockSchema = z.object({
     minutes: z.coerce.number().int().min(1).max(7 * 24 * 60).optional(),
+});
+
+const QueueLowConfidenceSchema = z.object({
+    threshold: z.coerce.number().min(0).max(1).optional(),
+    includeDeleted: z.coerce.boolean().optional(),
 });
 
 const AnalyticsQuerySchema = z.object({
@@ -410,6 +418,7 @@ adminRouter.patch('/users/:id/seller-verify', requireAdmin, requireAdminPermissi
 adminRouter.get('/products', requireAdmin, requireAdminPermission('content:read'), async (req, res, next) => {
     try {
         const query = ListQuerySchema.parse(req.query);
+        const aiThreshold = query.aiConfidenceLte ?? 0.6;
 
         const where: Record<string, unknown> = {
             ...(query.includeDeleted ? {} : { deletedAt: null }),
@@ -420,6 +429,16 @@ adminRouter.get('/products', requireAdmin, requireAdminPermission('content:read'
                 { category: { contains: query.search, mode: 'insensitive' } },
                 { location: { contains: query.search, mode: 'insensitive' } },
             ];
+        }
+
+        if (query.lowConfidenceOnly) {
+            (where as any).aiAssessment = {
+                is: {
+                    confidence: {
+                        lte: aiThreshold,
+                    },
+                },
+            };
         }
 
         const products = await (prisma as any).product.findMany({
@@ -434,11 +453,89 @@ adminRouter.get('/products', requireAdmin, requireAdminPermission('content:read'
                 location: true,
                 createdAt: true,
                 deletedAt: true,
+                aiAssessment: {
+                    select: {
+                        confidence: true,
+                        category: true,
+                        moistureState: true,
+                        impurityLevel: true,
+                        provider: true,
+                        model: true,
+                        moderationStatus: true,
+                        queuedAt: true,
+                        queuedBy: true,
+                        createdAt: true,
+                    },
+                },
                 seller: { select: { name: true, email: true } },
             },
         });
 
         res.json({ products });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/products/queue-low-confidence', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
+    try {
+        const body = QueueLowConfidenceSchema.parse(req.body ?? {});
+        const threshold = body.threshold ?? 0.6;
+
+        const result = await (prisma as any).productAiAssessment.updateMany({
+            where: {
+                confidence: { lte: threshold },
+                moderationStatus: { not: 'PENDING' },
+                product: body.includeDeleted ? undefined : { is: { deletedAt: null } },
+            },
+            data: {
+                moderationStatus: 'PENDING',
+                queuedAt: new Date(),
+                queuedBy: req.admin!.email,
+                moderationReason: `Auto-enqueue do AI confidence <= ${threshold}`,
+            },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: 'products.ai_queue_low_confidence',
+            resource: 'product',
+            status: 'success',
+            metadata: { threshold, queuedCount: result.count },
+        }).catch(() => undefined);
+
+        res.json({ queued: result.count, threshold });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.patch('/products/:id/queue-moderation', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
+    try {
+        const productId = z.string().uuid().parse(req.params.id);
+
+        const updated = await (prisma as any).productAiAssessment.update({
+            where: { productId },
+            data: {
+                moderationStatus: 'PENDING',
+                queuedAt: new Date(),
+                queuedBy: req.admin!.email,
+                moderationReason: 'Manual queue from products table',
+            },
+            select: { productId: true, moderationStatus: true, queuedAt: true, queuedBy: true },
+        });
+
+        await writeAdminAuditLog(req, {
+            adminEmail: req.admin!.email,
+            adminRole: req.admin!.role,
+            action: 'products.ai_queue_single',
+            resource: 'product',
+            resourceId: productId,
+            status: 'success',
+        }).catch(() => undefined);
+
+        res.json({ queued: updated });
     } catch (err) {
         next(err);
     }
@@ -770,24 +867,69 @@ adminRouter.get('/moderation/queue', requireAdmin, requireAdminPermission('conte
     try {
         const query = ModerationQueueQuerySchema.parse(req.query);
         const take = query.take ?? 120;
-        const resources = query.resource ? [query.resource] : ['posts', 'events', 'pollution'];
+        const resources = query.resource ? [query.resource] : ['posts', 'events', 'pollution', 'products'];
         const search = query.search?.trim();
+        const sortMode = query.sort ?? 'newest';
 
-        const [posts, events, reports] = await Promise.all([
+        const postsWhere = {
+            deletedAt: null,
+            moderationStatus: 'PENDING',
+            ...(search
+                ? {
+                    OR: [
+                        { content: { contains: search, mode: 'insensitive' } },
+                        { author: { name: { contains: search, mode: 'insensitive' } } },
+                    ],
+                }
+                : {}),
+        };
+
+        const eventsWhere = {
+            deletedAt: null,
+            moderationStatus: 'PENDING',
+            ...(search
+                ? {
+                    OR: [
+                        { title: { contains: search, mode: 'insensitive' } },
+                        { location: { contains: search, mode: 'insensitive' } },
+                        { organizer: { contains: search, mode: 'insensitive' } },
+                    ],
+                }
+                : {}),
+        };
+
+        const pollutionWhere = {
+            deletedAt: null,
+            moderationStatus: 'PENDING',
+            ...(search
+                ? {
+                    OR: [
+                        { description: { contains: search, mode: 'insensitive' } },
+                        { type: { contains: search, mode: 'insensitive' } },
+                    ],
+                }
+                : {}),
+        };
+
+        const productsWhere = {
+            deletedAt: null,
+            aiAssessment: { is: { moderationStatus: 'PENDING' } },
+            ...(search
+                ? {
+                    OR: [
+                        { title: { contains: search, mode: 'insensitive' } },
+                        { category: { contains: search, mode: 'insensitive' } },
+                        { location: { contains: search, mode: 'insensitive' } },
+                        { seller: { name: { contains: search, mode: 'insensitive' } } },
+                    ],
+                }
+                : {}),
+        };
+
+        const [posts, events, reports, products] = await Promise.all([
             resources.includes('posts')
                 ? (prisma as any).post.findMany({
-                    where: {
-                        deletedAt: null,
-                        moderationStatus: 'PENDING',
-                        ...(search
-                            ? {
-                                OR: [
-                                    { content: { contains: search, mode: 'insensitive' } },
-                                    { author: { name: { contains: search, mode: 'insensitive' } } },
-                                ],
-                            }
-                            : {}),
-                    },
+                    where: postsWhere,
                     include: { author: { select: { name: true, email: true } } },
                     orderBy: { createdAt: 'desc' },
                     take,
@@ -795,45 +937,50 @@ adminRouter.get('/moderation/queue', requireAdmin, requireAdminPermission('conte
                 : Promise.resolve([]),
             resources.includes('events')
                 ? (prisma as any).event.findMany({
-                    where: {
-                        deletedAt: null,
-                        moderationStatus: 'PENDING',
-                        ...(search
-                            ? {
-                                OR: [
-                                    { title: { contains: search, mode: 'insensitive' } },
-                                    { location: { contains: search, mode: 'insensitive' } },
-                                    { organizer: { contains: search, mode: 'insensitive' } },
-                                ],
-                            }
-                            : {}),
-                    },
+                    where: eventsWhere,
                     orderBy: { createdAt: 'desc' },
                     take,
                 })
                 : Promise.resolve([]),
             resources.includes('pollution')
                 ? (prisma as any).pollutionReport.findMany({
-                    where: {
-                        deletedAt: null,
-                        moderationStatus: 'PENDING',
-                        ...(search
-                            ? {
-                                OR: [
-                                    { description: { contains: search, mode: 'insensitive' } },
-                                    { type: { contains: search, mode: 'insensitive' } },
-                                ],
-                            }
-                            : {}),
-                    },
+                    where: pollutionWhere,
                     include: { owner: { select: { name: true, email: true } } },
                     orderBy: { createdAt: 'desc' },
                     take,
                 })
                 : Promise.resolve([]),
+            resources.includes('products')
+                ? (prisma as any).product.findMany({
+                    where: productsWhere,
+                    include: {
+                        seller: { select: { name: true, email: true } },
+                        aiAssessment: {
+                            select: {
+                                confidence: true,
+                                category: true,
+                                moistureState: true,
+                                impurityLevel: true,
+                                summary: true,
+                                provider: true,
+                                model: true,
+                                moderationReason: true,
+                                queuedAt: true,
+                            },
+                        },
+                    },
+                    orderBy: sortMode === 'risk_desc'
+                        ? ([
+                            { aiAssessment: { confidence: 'asc' } },
+                            { createdAt: 'desc' },
+                        ] as any)
+                        : ({ createdAt: 'desc' } as any),
+                    take,
+                })
+                : Promise.resolve([]),
         ]);
 
-        const queue = [
+        let queue = [
             ...posts.map((post: any) => ({
                 id: post.id,
                 resource: 'posts',
@@ -855,11 +1002,60 @@ adminRouter.get('/moderation/queue', requireAdmin, requireAdminPermission('conte
                 subtitle: report.description,
                 createdAt: report.createdAt,
             })),
-        ]
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .slice(0, take);
+            ...products.map((product: any) => ({
+                id: product.id,
+                resource: 'products',
+                title: product.title,
+                subtitle: `AI ${Math.round(Number(product.aiAssessment?.confidence ?? 0) * 100)}% · ${product.aiAssessment?.category ?? 'Khác'} · ${product.seller?.name ?? 'Unknown seller'}`,
+                createdAt: product.aiAssessment?.queuedAt ?? product.createdAt,
+                riskScore: Number(product.aiAssessment?.confidence ?? 1),
+                ai: product.aiAssessment
+                    ? {
+                        confidence: Number(product.aiAssessment.confidence ?? 0),
+                        category: product.aiAssessment.category,
+                        moisture_state: product.aiAssessment.moistureState,
+                        impurity_level: product.aiAssessment.impurityLevel,
+                        summary: product.aiAssessment.summary,
+                        provider: product.aiAssessment.provider,
+                        model: product.aiAssessment.model,
+                        moderation_reason: product.aiAssessment.moderationReason,
+                        queued_at: product.aiAssessment.queuedAt,
+                    }
+                    : null,
+            })),
+        ];
 
-        res.json({ queue });
+        if (query.resource === 'products' && sortMode === 'risk_desc') {
+            queue = queue
+                .sort((a: any, b: any) => {
+                    const riskDiff = Number(a.riskScore ?? 1) - Number(b.riskScore ?? 1);
+                    if (riskDiff !== 0) return riskDiff;
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                })
+                .slice(0, take);
+        } else {
+            queue = queue
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .slice(0, take);
+        }
+
+        const [postsCount, eventsCount, pollutionCount, productsCount] = await Promise.all([
+            (prisma as any).post.count({ where: postsWhere }),
+            (prisma as any).event.count({ where: eventsWhere }),
+            (prisma as any).pollutionReport.count({ where: pollutionWhere }),
+            (prisma as any).product.count({ where: productsWhere }),
+        ]);
+
+        res.json({
+            queue,
+            counts: {
+                all: postsCount + eventsCount + pollutionCount + productsCount,
+                posts: postsCount,
+                events: eventsCount,
+                pollution: pollutionCount,
+                products: productsCount,
+            },
+        });
     } catch (err) {
         next(err);
     }
@@ -867,7 +1063,7 @@ adminRouter.get('/moderation/queue', requireAdmin, requireAdminPermission('conte
 
 adminRouter.patch('/moderation/:resource/:id/approve', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
     try {
-        const resource = z.enum(['posts', 'events', 'pollution']).parse(req.params.resource);
+        const resource = z.enum(['posts', 'events', 'pollution', 'products']).parse(req.params.resource);
         const resourceId = z.string().uuid().parse(req.params.id);
         const body = ModerateDecisionSchema.parse(req.body ?? {});
         const moderationData = {
@@ -881,8 +1077,19 @@ adminRouter.patch('/moderation/:resource/:id/approve', requireAdmin, requireAdmi
             await (prisma as any).post.update({ where: { id: resourceId }, data: moderationData });
         } else if (resource === 'events') {
             await (prisma as any).event.update({ where: { id: resourceId }, data: moderationData });
-        } else {
+        } else if (resource === 'pollution') {
             await (prisma as any).pollutionReport.update({ where: { id: resourceId }, data: moderationData });
+        } else {
+            await (prisma as any).productAiAssessment.update({
+                where: { productId: resourceId },
+                data: {
+                    moderationStatus: 'APPROVED',
+                    moderatedAt: new Date(),
+                    moderatedBy: req.admin!.email,
+                    moderationReason: body.reason,
+                },
+            });
+            await (prisma as any).product.updateMany({ where: { id: resourceId }, data: { deletedAt: null } });
         }
 
         await writeAdminAuditLog(req, {
@@ -903,7 +1110,7 @@ adminRouter.patch('/moderation/:resource/:id/approve', requireAdmin, requireAdmi
 
 adminRouter.patch('/moderation/:resource/:id/reject', requireAdmin, requireAdminPermission('content:moderate'), async (req: AdminRequest, res, next) => {
     try {
-        const resource = z.enum(['posts', 'events', 'pollution']).parse(req.params.resource);
+        const resource = z.enum(['posts', 'events', 'pollution', 'products']).parse(req.params.resource);
         const resourceId = z.string().uuid().parse(req.params.id);
         const body = ModerateDecisionSchema.parse(req.body ?? {});
         const moderationData = {
@@ -917,8 +1124,19 @@ adminRouter.patch('/moderation/:resource/:id/reject', requireAdmin, requireAdmin
             await (prisma as any).post.update({ where: { id: resourceId }, data: moderationData });
         } else if (resource === 'events') {
             await (prisma as any).event.update({ where: { id: resourceId }, data: moderationData });
-        } else {
+        } else if (resource === 'pollution') {
             await (prisma as any).pollutionReport.update({ where: { id: resourceId }, data: moderationData });
+        } else {
+            await (prisma as any).productAiAssessment.update({
+                where: { productId: resourceId },
+                data: {
+                    moderationStatus: 'REJECTED',
+                    moderatedAt: new Date(),
+                    moderatedBy: req.admin!.email,
+                    moderationReason: body.reason,
+                },
+            });
+            await (prisma as any).product.updateMany({ where: { id: resourceId }, data: { deletedAt: new Date() } });
         }
 
         await writeAdminAuditLog(req, {
@@ -944,6 +1162,7 @@ adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('das
         const fromDate = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
 
         const [
+            pendingProducts,
             pendingPosts,
             pendingEvents,
             pendingPollution,
@@ -952,6 +1171,7 @@ adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('das
             totalUsers,
             totalProducts,
         ] = await Promise.all([
+            (prisma as any).productAiAssessment.count({ where: { moderationStatus: 'PENDING', product: { is: { deletedAt: null } } } }),
             (prisma as any).post.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
             (prisma as any).event.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
             (prisma as any).pollutionReport.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
@@ -999,8 +1219,9 @@ adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('das
             kpis: {
                 totalUsers,
                 totalProducts,
-                pendingModeration: pendingPosts + pendingEvents + pendingPollution,
+                pendingModeration: pendingProducts + pendingPosts + pendingEvents + pendingPollution,
                 pendingBreakdown: {
+                    products: pendingProducts,
                     posts: pendingPosts,
                     events: pendingEvents,
                     pollution: pendingPollution,
@@ -1017,7 +1238,8 @@ adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('das
 
 adminRouter.get('/analytics/alerts', requireAdmin, requireAdminPermission('dashboard:read'), async (_req, res, next) => {
     try {
-        const [pendingPosts, pendingEvents, pendingPollution, lockedUsers, failedLogins1h] = await Promise.all([
+        const [pendingProducts, pendingPosts, pendingEvents, pendingPollution, lockedUsers, failedLogins1h] = await Promise.all([
+            (prisma as any).productAiAssessment.count({ where: { moderationStatus: 'PENDING', product: { is: { deletedAt: null } } } }),
             (prisma as any).post.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
             (prisma as any).event.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
             (prisma as any).pollutionReport.count({ where: { deletedAt: null, moderationStatus: 'PENDING' } }),
@@ -1031,14 +1253,14 @@ adminRouter.get('/analytics/alerts', requireAdmin, requireAdminPermission('dashb
         const serverErrorRate = totalRequests > 0 ? Number((serverErrors / totalRequests).toFixed(4)) : 0;
 
         const alerts: Array<{ id: string; level: 'info' | 'warning' | 'critical'; title: string; detail: string }> = [];
-        const pendingTotal = pendingPosts + pendingEvents + pendingPollution;
+        const pendingTotal = pendingProducts + pendingPosts + pendingEvents + pendingPollution;
 
         if (pendingTotal >= 30) {
             alerts.push({
                 id: 'pending-moderation-high',
                 level: 'critical',
                 title: 'Tồn đọng kiểm duyệt cao',
-                detail: `${pendingTotal} mục đang chờ duyệt (${pendingPosts} bài viết, ${pendingEvents} sự kiện, ${pendingPollution} báo cáo).`,
+                detail: `${pendingTotal} mục đang chờ duyệt (${pendingProducts} sản phẩm, ${pendingPosts} bài viết, ${pendingEvents} sự kiện, ${pendingPollution} báo cáo).`,
             });
         } else if (pendingTotal >= 10) {
             alerts.push({

@@ -10,7 +10,8 @@ import {
   X,
   Image as ImageIcon,
   Loader2,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
@@ -49,6 +50,16 @@ interface SellerRanking {
   average_rating: number;
   total_reviews: number;
   verified: boolean;
+}
+
+interface VisionSuggestion {
+  category: 'Rơm rạ' | 'Vỏ trấu' | 'Phân bón' | 'Bã mía' | 'Gỗ & Mùn cưa' | 'Khác';
+  moisture_state: 'KHÔ' | 'ẨM' | 'ƯỚT' | 'KHÔNG_RÕ';
+  impurity_level: 'THẤP' | 'TRUNG_BÌNH' | 'CAO' | 'KHÔNG_RÕ';
+  confidence: number;
+  recommended_quality_score: number;
+  summary: string;
+  evidence: string[];
 }
 
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
@@ -538,6 +549,10 @@ ProductCard.displayName = 'ProductCard';
 
 const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSubmit: (p: Product) => void, user: any }> = ({ isOpen, onClose, onSubmit, user }) => {
   const [loading, setLoading] = useState(false);
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [classifyError, setClassifyError] = useState<string | null>(null);
+  const [visionSuggestion, setVisionSuggestion] = useState<VisionSuggestion | null>(null);
+  const [visionProvider, setVisionProvider] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     price: '',
@@ -551,6 +566,54 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     co2_savings_kg: '10',
     description: ''
   });
+
+  const handleClassifyImage = async () => {
+    if (!user) {
+      alert('Vui lòng đăng nhập để dùng AI phân loại.');
+      return;
+    }
+
+    if (!formData.image.trim()) {
+      setClassifyError('Vui lòng nhập URL ảnh sản phẩm trước khi phân loại.');
+      setVisionSuggestion(null);
+      return;
+    }
+
+    setIsClassifying(true);
+    setClassifyError(null);
+
+    try {
+      const res = await apiFetch('products/classify-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: formData.image.trim(),
+          title: formData.title.trim() || undefined,
+          description: formData.description.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as any;
+      if (!res.ok) throw new Error(data?.error ?? 'Không thể phân loại ảnh');
+
+      setVisionSuggestion(data?.suggestion as VisionSuggestion);
+      setVisionProvider(typeof data?.provider === 'string' ? data.provider : null);
+    } catch (err: any) {
+      setClassifyError(err?.message ?? 'Phân loại ảnh thất bại');
+      setVisionSuggestion(null);
+      setVisionProvider(null);
+    } finally {
+      setIsClassifying(false);
+    }
+  };
+
+  const applySuggestion = () => {
+    if (!visionSuggestion) return;
+    setFormData((prev) => ({
+      ...prev,
+      category: visionSuggestion.category,
+      quality_score: String(visionSuggestion.recommended_quality_score),
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -647,9 +710,53 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     placeholder="https://..."
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                     value={formData.image}
-                    onChange={e => setFormData({ ...formData, image: e.target.value })}
+                    onChange={e => {
+                      setFormData({ ...formData, image: e.target.value });
+                      setVisionSuggestion(null);
+                      setVisionProvider(null);
+                      setClassifyError(null);
+                    }}
                   />
                 </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleClassifyImage()}
+                    disabled={isClassifying}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-60"
+                  >
+                    {isClassifying ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    AI phân loại từ ảnh
+                  </button>
+                  {visionProvider && <span className="text-[11px] text-slate-500">Nguồn: {visionProvider}</span>}
+                </div>
+                {classifyError && <p className="mt-2 text-xs text-rose-600">{classifyError}</p>}
+                {visionSuggestion && (
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-slate-700 space-y-2">
+                    <div className="font-medium text-emerald-800">Gợi ý AI định danh phụ phẩm</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>Loại phụ phẩm: <span className="font-semibold">{visionSuggestion.category}</span></div>
+                      <div>Độ tin cậy: <span className="font-semibold">{Math.round(visionSuggestion.confidence * 100)}%</span></div>
+                      <div>Trạng thái ẩm: <span className="font-semibold">{visionSuggestion.moisture_state}</span></div>
+                      <div>Tạp chất: <span className="font-semibold">{visionSuggestion.impurity_level}</span></div>
+                    </div>
+                    <p>{visionSuggestion.summary}</p>
+                    {Array.isArray(visionSuggestion.evidence) && visionSuggestion.evidence.length > 0 && (
+                      <ul className="list-disc pl-5 space-y-1">
+                        {visionSuggestion.evidence.map((item, idx) => (
+                          <li key={`${item}-${idx}`}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      type="button"
+                      onClick={applySuggestion}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-white font-medium hover:bg-emerald-700"
+                    >
+                      Áp dụng gợi ý vào tin đăng
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

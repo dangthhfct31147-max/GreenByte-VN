@@ -98,6 +98,7 @@ model Product {
 	inquiries ProductInquiry[]
 	views ProductViewEvent[]
 	blockchainRecords BlockchainRecord[]
+	aiAssessment ProductAiAssessment?
 
 	createdAt DateTime @default(now())
 	updatedAt DateTime @updatedAt
@@ -111,6 +112,37 @@ model Product {
 	@@index([priceVnd])
 	@@index([qualityScore])
 	@@index([deletedAt])
+}
+
+model ProductAiAssessment {
+	id          String  @id @default(uuid())
+	productId   String  @unique
+	product     Product @relation(fields: [productId], references: [id])
+
+	provider    String
+	model       String
+	category    String
+	moistureState String
+	impurityLevel String
+	confidence  Float
+	recommendedQualityScore Int
+	summary     String
+	evidenceJson String
+	imageUrl    String
+	inputTitle  String?
+	inputDescription String?
+	rawJson     String?
+	moderationStatus ModerationStatus @default(APPROVED)
+	moderationReason String?
+	queuedAt     DateTime?
+	queuedBy     String?
+	moderatedAt  DateTime?
+	moderatedBy  String?
+
+	createdAt   DateTime @default(now())
+
+	@@index([createdAt])
+	@@index([moderationStatus])
 }
 
 enum InquiryStatus {
