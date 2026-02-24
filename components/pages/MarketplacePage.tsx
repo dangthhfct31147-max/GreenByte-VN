@@ -79,6 +79,7 @@ interface AssistantTurn {
 
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
 const DEFAULT_PRODUCT_IMAGE = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%22800%22 viewBox=%220 0 1200 800%22%3E%3Crect width=%221200%22 height=%22800%22 fill=%22%23e2e8f0%22/%3E%3Cg fill=%22%2394a3b8%22%3E%3Ccircle cx=%22600%22 cy=%22310%22 r=%2260%22/%3E%3Cpath d=%22M430 520c40-78 104-118 170-118s130 40 170 118z%22/%3E%3C/g%3E%3Ctext x=%22600%22 y=%22620%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2236%22 fill=%2264748b%22%3EAnh san pham%3C/text%3E%3C/svg%3E';
+const AUTO_REFRESH_PREF_KEY_PREFIX = 'greenbyte:seller-assistant:auto-refresh:';
 
 const DEFAULT_CREATE_FORM = {
   title: '',
@@ -593,6 +594,11 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   const [formData, setFormData] = useState(DEFAULT_CREATE_FORM);
   const lastAutoRefreshSignatureRef = useRef<string>('');
 
+  const autoRefreshPrefKey = useMemo(() => {
+    const userId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : 'anonymous';
+    return `${AUTO_REFRESH_PREF_KEY_PREFIX}${userId}`;
+  }, [user?.id]);
+
   const unresolvedAiMissingFields = useMemo(() => {
     const missing = assistantGuidance?.missing_fields ?? [];
     const hasText = (value: string) => value.trim().length > 0;
@@ -618,6 +624,21 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   }, [assistantGuidance?.missing_fields, formData.category, formData.co2_savings_kg, formData.description, formData.image, formData.location, formData.price, formData.title, formData.unit]);
 
   const shouldBlockSubmitByAi = unresolvedAiMissingFields.length > 0;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const stored = window.localStorage.getItem(autoRefreshPrefKey);
+      if (stored === '0') {
+        setAutoRefreshChecklistEnabled(false);
+      } else {
+        setAutoRefreshChecklistEnabled(true);
+      }
+    } catch {
+      setAutoRefreshChecklistEnabled(true);
+    }
+  }, [autoRefreshPrefKey]);
 
   const assistantDraftSignature = useMemo(() => JSON.stringify({
     title: formData.title.trim(),
@@ -782,6 +803,16 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     );
   };
 
+  const handleToggleAutoRefreshChecklist = (enabled: boolean) => {
+    setAutoRefreshChecklistEnabled(enabled);
+
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(autoRefreshPrefKey, enabled ? '1' : '0');
+    } catch {
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) {
       setHasAutoAssistantRun(false);
@@ -879,7 +910,6 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       setAssistantProvider(null);
       setAssistantInput('');
       setAssistantError(null);
-      setAutoRefreshChecklistEnabled(true);
       lastAutoRefreshSignatureRef.current = '';
     } catch (err: any) {
       alert(err?.message ?? 'Có lỗi xảy ra');
@@ -984,13 +1014,23 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-800">AI trợ lý đăng bán (Tiếng Việt đơn giản)</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-800">AI trợ lý đăng bán (Tiếng Việt đơn giản)</div>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${autoRefreshChecklistEnabled
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}
+                    >
+                      Tự làm mới: {autoRefreshChecklistEnabled ? 'Bật' : 'Tắt'}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <label className="inline-flex items-center gap-1 text-[11px] text-slate-600">
                       <input
                         type="checkbox"
                         checked={autoRefreshChecklistEnabled}
-                        onChange={(e) => setAutoRefreshChecklistEnabled(e.target.checked)}
+                        onChange={(e) => handleToggleAutoRefreshChecklist(e.target.checked)}
                         className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                       />
                       Tự làm mới checklist
