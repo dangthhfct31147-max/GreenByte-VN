@@ -137,6 +137,12 @@ function getRedisTargetForLogs(redisUrl: string, tlsEnabled: boolean): string {
  * Initialize Redis connection
  */
 function initRedis(): Redis | null {
+    const redisEnabled = readBoolEnv('REDIS_ENABLED', true);
+    if (!redisEnabled) {
+        lastRedisInitBlockReason = 'redis_disabled_by_env';
+        return null;
+    }
+
     if (redisDisabledUntilRestart) {
         return null;
     }
