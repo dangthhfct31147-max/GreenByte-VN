@@ -25,7 +25,7 @@ healthRouter.get('/health/ready', async (_req, res) => {
     }
 
     const redisHealthy = await cache.checkRedisHealth(1000);
-    const aready = dbHealthy;
+    const ready = dbHealthy;
 
     const status = {
         status: ready ? 'ready' : 'not_ready',
