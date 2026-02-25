@@ -593,6 +593,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   const [autoRefreshChecklistEnabled, setAutoRefreshChecklistEnabled] = useState(true);
   const [formData, setFormData] = useState(DEFAULT_CREATE_FORM);
   const lastAutoRefreshSignatureRef = useRef<string>('');
+  const hasTriggeredInitialAssistantRef = useRef(false);
 
   const autoRefreshPrefKey = useMemo(() => {
     const userId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : 'anonymous';
@@ -766,7 +767,14 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
 
       setAssistantGuidance(guidance);
       setAssistantProvider(typeof data?.provider === 'string' ? data.provider : null);
-      setAssistantConversation((prev) => [...prev, { role: 'assistant', content: guidance.assistant_message }]);
+      setAssistantConversation((prev) => {
+        const lastTurn = prev[prev.length - 1];
+        if (lastTurn?.role === 'assistant' && lastTurn.content === guidance.assistant_message) {
+          return prev;
+        }
+
+        return [...prev, { role: 'assistant', content: guidance.assistant_message }];
+      });
     } catch (err: any) {
       setAssistantError(err?.message ?? 'AI trợ lý tạm thời bận, vui lòng thử lại.');
     } finally {
@@ -817,13 +825,15 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
     if (!isOpen) {
       setHasAutoAssistantRun(false);
       lastAutoRefreshSignatureRef.current = '';
+      hasTriggeredInitialAssistantRef.current = false;
       return;
     }
 
-    if (!user || hasAutoAssistantRun || isAssisting) {
+    if (!user || hasAutoAssistantRun || isAssisting || hasTriggeredInitialAssistantRef.current) {
       return;
     }
 
+    hasTriggeredInitialAssistantRef.current = true;
     setHasAutoAssistantRun(true);
 
     void requestSellerAssistant(
@@ -921,7 +931,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-24 pb-6">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -934,7 +944,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative z-10 overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden max-h-[calc(100vh-7rem)] flex flex-col"
           >
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-slate-900">Đăng tin bán phụ phẩm</h3>
@@ -948,7 +958,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
 
               <div>
                 <label htmlFor="product-image" className="block text-sm font-medium text-slate-700 mb-1">Ảnh sản phẩm (URL)</label>
