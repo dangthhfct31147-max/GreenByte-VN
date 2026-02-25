@@ -19,13 +19,23 @@
  */
 
 import Redis, { RedisOptions, ChainableCommander } from 'ioredis';
-import { getEnv } from '../env';
 
 // Singleton instance
 let redis: Redis | null = null;
 let isRedisAvailable = false;
 let lastRedisError: { at: string; code?: string; message: string } | null = null;
 let lastRedisInitBlockReason: string | null = null;
+let redisDisabledUntilRestart = false;
+
+function isRunningOnRailway(): boolean {
+    return Boolean(
+        process.env.RAILWAY_ENVIRONMENT ||
+        process.env.RAILWAY_PROJECT_ID ||
+        process.env.RAILWAY_SERVICE_ID ||
+        process.env.RAILWAY_STATIC_URL ||
+        process.env.RAILWAY_PUBLIC_DOMAIN
+    );
+}
 
 function sanitizeRedisUrl(value: string | undefined): string {
     return value ? String(value).trim().replace(/^['"]|['"]$/g, '') : '';
@@ -67,12 +77,39 @@ function getRedisUrlFromEnvWithSource(): { url: string; source: string | null } 
         'REDIS_CONNECTION_STRING',
     ];
 
+    const runningOnRailway = isRunningOnRailway();
+    const validCandidates: Array<{ url: string; source: string; host?: string }> = [];
+
     for (const name of candidates) {
         const raw = process.env[name];
         const v = sanitizeRedisUrl(raw);
-        if (v) return { url: v, source: name };
+        if (!v) continue;
+
+        let host: string | undefined;
+        try {
+            host = new URL(v).hostname;
+        } catch {
+            host = undefined;
+        }
+
+        validCandidates.push({ url: v, source: name, host });
     }
-    return { url: '', source: null };
+
+    if (validCandidates.length === 0) {
+        return { url: '', source: null };
+    }
+
+    if (runningOnRailway) {
+        return { url: validCandidates[0].url, source: validCandidates[0].source };
+    }
+
+    // Outside Railway, prefer non-internal endpoints if available.
+    const nonInternal = validCandidates.find((c) => !isInternalRedisHost(c.host));
+    if (nonInternal) {
+        return { url: nonInternal.url, source: nonInternal.source };
+    }
+
+    return { url: validCandidates[0].url, source: validCandidates[0].source };
 }
 
 function looksLikePlaceholder(value: string | undefined): boolean {
@@ -100,6 +137,10 @@ function getRedisTargetForLogs(redisUrl: string, tlsEnabled: boolean): string {
  * Initialize Redis connection
  */
 function initRedis(): Redis | null {
+    if (redisDisabledUntilRestart) {
+        return null;
+    }
+
     if (redis) return redis;
 
     const { url: redisUrl, source: redisUrlSource } = getRedisUrlFromEnvWithSource();
@@ -119,7 +160,7 @@ function initRedis(): Redis | null {
         return null;
     }
 
-    const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+    const isRailway = isRunningOnRailway();
     const isProduction = process.env.NODE_ENV === 'production' || isRailway;
 
     if (isProduction && /redis:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(redisUrl)) {
@@ -169,6 +210,17 @@ function initRedis(): Redis | null {
 
         const redisHost = parsed?.hostname;
         const internalHost = isInternalRedisHost(redisHost);
+        const disableOnDnsError = readBoolEnv('REDIS_DISABLE_ON_ENOTFOUND', true);
+
+        if (!isRailway && redisHost && /(^|\.)railway\.internal$/i.test(redisHost)) {
+            console.warn(
+                `⚠️ Redis host "${redisHost}" chỉ truy cập được trong Railway private network. ` +
+                'Caching sẽ bị tắt trong môi trường hiện tại. Dùng REDIS_PUBLIC_URL khi chạy ngoài Railway.'
+            );
+            lastRedisInitBlockReason = 'railway_internal_outside_railway';
+            redisDisabledUntilRestart = true;
+            return null;
+        }
 
         if (isProduction && requireTlsInProd && !internalHost && !tlsEnabled) {
             console.warn(
@@ -242,19 +294,33 @@ function initRedis(): Redis | null {
                 message: err?.message || String(err),
             };
             isRedisAvailable = false;
+
+            if (disableOnDnsError && err?.code === 'ENOTFOUND') {
+                redisDisabledUntilRestart = true;
+                lastRedisInitBlockReason = 'redis_dns_enotfound';
+                const current = redis;
+                redis = null;
+                if (current) {
+                    current.disconnect(false);
+                }
+                console.error('🛑 Redis bị vô hiệu hóa cho đến khi restart process do lỗi DNS ENOTFOUND.');
+            }
         });
 
         redis.on('close', () => {
+            if (redisDisabledUntilRestart) return;
             console.warn('⚠️ Redis connection closed');
             isRedisAvailable = false;
         });
 
         redis.on('end', () => {
+            if (redisDisabledUntilRestart) return;
             console.warn('⚠️ Redis connection ended');
             isRedisAvailable = false;
         });
 
         redis.on('reconnecting', () => {
+            if (redisDisabledUntilRestart) return;
             console.warn('🔁 Redis reconnecting...');
             isRedisAvailable = false;
         });
@@ -405,6 +471,7 @@ export async function disconnect(): Promise<void> {
         redis = null;
         isRedisAvailable = false;
     }
+    redisDisabledUntilRestart = false;
 }
 
 export const cache = {

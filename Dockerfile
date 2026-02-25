@@ -13,6 +13,7 @@ WORKDIR /app
 
 # Install build dependencies (needed for some node modules)
 RUN apk add --no-cache python3 make g++
+RUN npm install -g npm@11.10.1
 
 # Copy package files
 COPY package*.json ./
@@ -41,6 +42,7 @@ FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
 # Install dumb-init and openssl
 RUN apk add --no-cache dumb-init openssl
+RUN npm install -g npm@11.10.1
 
 WORKDIR /app
 
