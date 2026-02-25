@@ -931,7 +931,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-24 pb-6">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-20 pb-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -944,7 +944,7 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative z-10 overflow-hidden max-h-[calc(100vh-7rem)] flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl relative z-10 overflow-hidden max-h-[calc(100vh-4rem)] flex flex-col"
           >
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 className="font-bold text-slate-900">Đăng tin bán phụ phẩm</h3>
