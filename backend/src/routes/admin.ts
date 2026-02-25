@@ -60,10 +60,32 @@ const AnalyticsQuerySchema = z.object({
     days: z.coerce.number().int().min(1).max(60).optional(),
 });
 
+const AiEventsAnalyticsQuerySchema = z.object({
+    weeks: z.coerce.number().int().min(2).max(52).optional(),
+    module: z.enum(['RECOMMENDATIONS', 'SELLER_ASSISTANT', 'PRICE_SUGGESTION', 'MATCH_BUYERS', 'VISION_CLASSIFIER']).optional(),
+});
+
 function startOfDay(date: Date) {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     return d;
+}
+
+function startOfWeek(date: Date) {
+    const d = startOfDay(date);
+    const dayOffset = (d.getDay() + 6) % 7; // Monday-based week
+    d.setDate(d.getDate() - dayOffset);
+    return d;
+}
+
+function addDays(date: Date, days: number) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
+function round2(value: number): number {
+    return Number(value.toFixed(2));
 }
 
 const ADMIN_LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -1230,6 +1252,126 @@ adminRouter.get('/analytics/overview', requireAdmin, requireAdminPermission('das
                 lockedUsers,
             },
             timeline: [...timelineMap.values()],
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+adminRouter.get('/analytics/ai-events', requireAdmin, requireAdminPermission('dashboard:read'), async (req, res, next) => {
+    try {
+        const query = AiEventsAnalyticsQuerySchema.parse(req.query);
+        const weeks = query.weeks ?? 8;
+        const moduleFilter = query.module ?? 'RECOMMENDATIONS';
+
+        const currentWeekStart = startOfWeek(new Date());
+        const fromWeekStart = addDays(currentWeekStart, -(weeks - 1) * 7);
+
+        const rows: Array<{
+            week_start: string;
+            week_end: string;
+            impressions: number;
+            clicks: number;
+            carts: number;
+            inquiries: number;
+            accepted: number;
+        }> = [];
+
+        const rowByWeekKey = new Map<string, (typeof rows)[number]>();
+
+        for (let i = 0; i < weeks; i += 1) {
+            const weekStart = addDays(fromWeekStart, i * 7);
+            const weekEnd = addDays(weekStart, 6);
+            const weekKey = weekStart.toISOString().slice(0, 10);
+            const bucket = {
+                week_start: weekKey,
+                week_end: weekEnd.toISOString().slice(0, 10),
+                impressions: 0,
+                clicks: 0,
+                carts: 0,
+                inquiries: 0,
+                accepted: 0,
+            };
+            rows.push(bucket);
+            rowByWeekKey.set(weekKey, bucket);
+        }
+
+        const events = await (prisma as any).aiUsageEvent.findMany({
+            where: {
+                createdAt: { gte: fromWeekStart },
+                module: moduleFilter,
+                eventType: { in: ['IMPRESSION', 'CLICK', 'CART_ADD', 'INQUIRY_OPEN', 'INQUIRY_ACCEPTED'] },
+            },
+            select: {
+                eventType: true,
+                createdAt: true,
+            },
+            orderBy: { createdAt: 'asc' },
+            take: 100_000,
+        });
+
+        for (const event of events as Array<{ eventType: string; createdAt: Date }>) {
+            const weekKey = startOfWeek(new Date(event.createdAt)).toISOString().slice(0, 10);
+            const bucket = rowByWeekKey.get(weekKey);
+            if (!bucket) continue;
+
+            if (event.eventType === 'IMPRESSION') bucket.impressions += 1;
+            if (event.eventType === 'CLICK') bucket.clicks += 1;
+            if (event.eventType === 'CART_ADD') bucket.carts += 1;
+            if (event.eventType === 'INQUIRY_OPEN') bucket.inquiries += 1;
+            if (event.eventType === 'INQUIRY_ACCEPTED') bucket.accepted += 1;
+        }
+
+        const timeline = rows.map((row) => {
+            const ctr = row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0;
+            const cartRate = row.clicks > 0 ? (row.carts / row.clicks) * 100 : 0;
+            const inquiryRate = row.clicks > 0 ? (row.inquiries / row.clicks) * 100 : 0;
+            const acceptedRate = row.inquiries > 0 ? (row.accepted / row.inquiries) * 100 : 0;
+            const acceptedFromClick = row.clicks > 0 ? (row.accepted / row.clicks) * 100 : 0;
+            const acceptedFromImpression = row.impressions > 0 ? (row.accepted / row.impressions) * 100 : 0;
+
+            return {
+                ...row,
+                ctr_pct: round2(ctr),
+                cart_rate_pct: round2(cartRate),
+                inquiry_rate_pct: round2(inquiryRate),
+                accepted_rate_pct: round2(acceptedRate),
+                accepted_from_click_pct: round2(acceptedFromClick),
+                accepted_from_impression_pct: round2(acceptedFromImpression),
+            };
+        });
+
+        const totalsRaw = timeline.reduce(
+            (acc, row) => {
+                acc.impressions += row.impressions;
+                acc.clicks += row.clicks;
+                acc.carts += row.carts;
+                acc.inquiries += row.inquiries;
+                acc.accepted += row.accepted;
+                return acc;
+            },
+            { impressions: 0, clicks: 0, carts: 0, inquiries: 0, accepted: 0 },
+        );
+
+        const totals = {
+            ...totalsRaw,
+            ctr_pct: round2(totalsRaw.impressions > 0 ? (totalsRaw.clicks / totalsRaw.impressions) * 100 : 0),
+            cart_rate_pct: round2(totalsRaw.clicks > 0 ? (totalsRaw.carts / totalsRaw.clicks) * 100 : 0),
+            inquiry_rate_pct: round2(totalsRaw.clicks > 0 ? (totalsRaw.inquiries / totalsRaw.clicks) * 100 : 0),
+            accepted_rate_pct: round2(totalsRaw.inquiries > 0 ? (totalsRaw.accepted / totalsRaw.inquiries) * 100 : 0),
+            accepted_from_click_pct: round2(totalsRaw.clicks > 0 ? (totalsRaw.accepted / totalsRaw.clicks) * 100 : 0),
+            accepted_from_impression_pct: round2(
+                totalsRaw.impressions > 0 ? (totalsRaw.accepted / totalsRaw.impressions) * 100 : 0,
+            ),
+        };
+
+        res.json({
+            module: moduleFilter,
+            weeks,
+            from: fromWeekStart.toISOString().slice(0, 10),
+            to: addDays(currentWeekStart, 6).toISOString().slice(0, 10),
+            totals,
+            timeline,
         });
     } catch (err) {
         next(err);

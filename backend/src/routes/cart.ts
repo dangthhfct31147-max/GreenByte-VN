@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { trackAiUsageEvent } from '../lib/aiLearning';
 
 export const cartRouter = Router();
 
@@ -83,6 +84,16 @@ cartRouter.post('/cart/items', requireAuth, async (req: AuthenticatedRequest, re
             include: {
                 product: { include: { seller: { select: { name: true } } } },
             },
+        });
+
+        void trackAiUsageEvent({
+            module: 'RECOMMENDATIONS',
+            eventType: 'CART_ADD',
+            userId,
+            productId: item.product.id,
+            category: item.product.category,
+            location: item.product.location,
+            metadata: { quantity: item.quantity },
         });
 
         res.status(201).json({

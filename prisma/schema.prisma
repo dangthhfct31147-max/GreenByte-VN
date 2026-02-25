@@ -1,487 +1,537 @@
 generator client {
-	provider = "prisma-client-js"
-	binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-	provider = "cockroachdb"
-	url      = env("DATABASE_URL")
+  provider = "cockroachdb"
+  url      = env("DATABASE_URL")
 }
 
 enum AdminRole {
-	SUPERADMIN
-	MODERATOR
-	ANALYST
+  SUPERADMIN
+  MODERATOR
+  ANALYST
 }
 
 enum ModerationStatus {
-	PENDING
-	APPROVED
-	REJECTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AiModule {
+  RECOMMENDATIONS
+  SELLER_ASSISTANT
+  PRICE_SUGGESTION
+  MATCH_BUYERS
+  VISION_CLASSIFIER
+}
+
+enum AiEventType {
+  REQUEST
+  IMPRESSION
+  CLICK
+  APPLY
+  VIEW
+  CART_ADD
+  INQUIRY_OPEN
+  INQUIRY_ACCEPTED
+  INQUIRY_REJECTED
+  REVIEW_POSITIVE
+  REVIEW_NEGATIVE
 }
 
 model User {
-	id           String    @id @default(uuid())
-	email        String    @unique
-	name         String
-	passwordHash String
+  id           String @id @default(uuid())
+  email        String @unique
+  name         String
+  passwordHash String
 
-	// TOTP (2FA)
-	totpEnabled Boolean @default(false)
-	totpSecret  String?
+  // TOTP (2FA)
+  totpEnabled Boolean @default(false)
+  totpSecret  String?
 
-	// Security
-	lockedUntil  DateTime?
-	lastLoginAt  DateTime?
-	sellerVerified Boolean @default(false)
+  // Security
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  sellerVerified Boolean   @default(false)
 
-	products Product[]
-	writtenReviews ProductReview[] @relation("ReviewerReviews")
-	receivedReviews ProductReview[] @relation("SellerReviews")
-	buyerInquiries ProductInquiry[] @relation("BuyerInquiries")
-	sellerInquiries ProductInquiry[] @relation("SellerInquiries")
-	inquiryMessages ProductInquiryMessage[]
-	productViews ProductViewEvent[]
-	posts    Post[]
-	postComments PostComment[]
-	cart     Cart?
+  products        Product[]
+  writtenReviews  ProductReview[]         @relation("ReviewerReviews")
+  receivedReviews ProductReview[]         @relation("SellerReviews")
+  buyerInquiries  ProductInquiry[]        @relation("BuyerInquiries")
+  sellerInquiries ProductInquiry[]        @relation("SellerInquiries")
+  inquiryMessages ProductInquiryMessage[]
+  productViews    ProductViewEvent[]
+  posts           Post[]
+  postComments    PostComment[]
+  cart            Cart?
 
-	postLikes PostLike[]
-	eventRsvps EventRsvp[]
-	pollutionReports PollutionReport[]
+  postLikes        PostLike[]
+  eventRsvps       EventRsvp[]
+  pollutionReports PollutionReport[]
+  aiUsageEvents    AiUsageEvent[]
 
-	loginChallenges LoginChallenge[]
-	loginAttempts   LoginAttempt[]
-	preferences     UserPreference?
-	greenTokens     GreenTokenLedger[]
-	walletAddress   String?
+  loginChallenges LoginChallenge[]
+  loginAttempts   LoginAttempt[]
+  preferences     UserPreference?
+  greenTokens     GreenTokenLedger[]
+  walletAddress   String?
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-
-
 model LoginChallenge {
-	id        String   @id @default(uuid())
-	userId    String
-	user      User     @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-	expiresAt DateTime
-	usedAt    DateTime?
+  expiresAt DateTime
+  usedAt    DateTime?
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@index([userId])
-	@@index([expiresAt])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Product {
-	id           String   @id @default(uuid())
-	title        String
-	priceVnd     Int
-	qualityScore Int      @default(3)
-	unit         String
-	category     String
-	location     String
-	latitude     Float?
-	longitude    Float?
-	imageUrl     String
-	description  String?
-	co2SavingsKg Int
+  id           String  @id @default(uuid())
+  title        String
+  priceVnd     Int
+  qualityScore Int     @default(3)
+  unit         String
+  category     String
+  location     String
+  latitude     Float?
+  longitude    Float?
+  imageUrl     String
+  description  String?
+  co2SavingsKg Int
 
-	sellerId String
-	seller   User     @relation(fields: [sellerId], references: [id])
+  sellerId String
+  seller   User   @relation(fields: [sellerId], references: [id])
 
-	cartItems CartItem[]
-	reviews ProductReview[]
-	inquiries ProductInquiry[]
-	views ProductViewEvent[]
-	blockchainRecords BlockchainRecord[]
-	aiAssessment ProductAiAssessment?
+  cartItems         CartItem[]
+  reviews           ProductReview[]
+  inquiries         ProductInquiry[]
+  views             ProductViewEvent[]
+  blockchainRecords BlockchainRecord[]
+  aiAssessment      ProductAiAssessment?
+  aiUsageEvents     AiUsageEvent[]
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
-	deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-	@@index([category])
-	@@index([sellerId])
-	@@index([createdAt])
-	@@index([title])
-	@@index([location])
-	@@index([priceVnd])
-	@@index([qualityScore])
-	@@index([deletedAt])
+  @@index([category])
+  @@index([sellerId])
+  @@index([createdAt])
+  @@index([title])
+  @@index([location])
+  @@index([priceVnd])
+  @@index([qualityScore])
+  @@index([deletedAt])
 }
 
 model ProductAiAssessment {
-	id          String  @id @default(uuid())
-	productId   String  @unique
-	product     Product @relation(fields: [productId], references: [id])
+  id        String  @id @default(uuid())
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id])
 
-	provider    String
-	model       String
-	category    String
-	moistureState String
-	impurityLevel String
-	confidence  Float
-	recommendedQualityScore Int
-	summary     String
-	evidenceJson String
-	imageUrl    String
-	inputTitle  String?
-	inputDescription String?
-	rawJson     String?
-	moderationStatus ModerationStatus @default(APPROVED)
-	moderationReason String?
-	queuedAt     DateTime?
-	queuedBy     String?
-	moderatedAt  DateTime?
-	moderatedBy  String?
+  provider                String
+  model                   String
+  category                String
+  moistureState           String
+  impurityLevel           String
+  confidence              Float
+  recommendedQualityScore Int
+  summary                 String
+  evidenceJson            String
+  imageUrl                String
+  inputTitle              String?
+  inputDescription        String?
+  rawJson                 String?
+  moderationStatus        ModerationStatus @default(APPROVED)
+  moderationReason        String?
+  queuedAt                DateTime?
+  queuedBy                String?
+  moderatedAt             DateTime?
+  moderatedBy             String?
 
-	createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@index([createdAt])
-	@@index([moderationStatus])
+  @@index([createdAt])
+  @@index([moderationStatus])
 }
 
 enum InquiryStatus {
-	OPEN
-	ACCEPTED
-	REJECTED
-	CLOSED
+  OPEN
+  ACCEPTED
+  REJECTED
+  CLOSED
 }
 
 model ProductReview {
-	id                    String   @id @default(uuid())
-	productId             String
-	reviewerId            String
-	sellerId              String
-	rating                Int
-	content               String
-	isVerifiedInteraction Boolean  @default(false)
+  id                    String  @id @default(uuid())
+  productId             String
+  reviewerId            String
+  sellerId              String
+  rating                Int
+  content               String
+  isVerifiedInteraction Boolean @default(false)
 
-	product  Product @relation(fields: [productId], references: [id])
-	reviewer User    @relation("ReviewerReviews", fields: [reviewerId], references: [id])
-	seller   User    @relation("SellerReviews", fields: [sellerId], references: [id])
+  product  Product @relation(fields: [productId], references: [id])
+  reviewer User    @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+  seller   User    @relation("SellerReviews", fields: [sellerId], references: [id])
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@unique([productId, reviewerId])
-	@@index([productId, createdAt])
-	@@index([sellerId, createdAt])
+  @@unique([productId, reviewerId])
+  @@index([productId, createdAt])
+  @@index([sellerId, createdAt])
 }
 
 model ProductInquiry {
-	id             String       @id @default(uuid())
-	productId      String
-	buyerId        String
-	sellerId       String
-	status         InquiryStatus @default(OPEN)
-	latestOfferVnd Int?
-	lastMessageAt  DateTime     @default(now())
+  id             String        @id @default(uuid())
+  productId      String
+  buyerId        String
+  sellerId       String
+  status         InquiryStatus @default(OPEN)
+  latestOfferVnd Int?
+  lastMessageAt  DateTime      @default(now())
 
-	product Product @relation(fields: [productId], references: [id])
-	buyer   User    @relation("BuyerInquiries", fields: [buyerId], references: [id])
-	seller  User    @relation("SellerInquiries", fields: [sellerId], references: [id])
-	messages ProductInquiryMessage[]
-	escrows  EscrowContract[]
+  product       Product                 @relation(fields: [productId], references: [id])
+  buyer         User                    @relation("BuyerInquiries", fields: [buyerId], references: [id])
+  seller        User                    @relation("SellerInquiries", fields: [sellerId], references: [id])
+  messages      ProductInquiryMessage[]
+  escrows       EscrowContract[]
+  aiUsageEvents AiUsageEvent[]
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@index([productId, createdAt])
-	@@index([buyerId, createdAt])
-	@@index([sellerId, createdAt])
-	@@index([status])
+  @@index([productId, createdAt])
+  @@index([buyerId, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([status])
+}
+
+model AiUsageEvent {
+  id        String      @id @default(uuid())
+  module    AiModule
+  eventType AiEventType
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  inquiryId String?
+  inquiry   ProductInquiry? @relation(fields: [inquiryId], references: [id])
+
+  sessionId    String?
+  category     String?
+  location     String?
+  metadataJson String?
+
+  createdAt DateTime @default(now())
+
+  @@index([module, eventType, createdAt])
+  @@index([userId, createdAt])
+  @@index([productId, createdAt])
+  @@index([inquiryId, createdAt])
 }
 
 model ProductInquiryMessage {
-	id              String  @id @default(uuid())
-	inquiryId       String
-	senderId        String
-	message         String
-	proposedPriceVnd Int?
+  id               String @id @default(uuid())
+  inquiryId        String
+  senderId         String
+  message          String
+  proposedPriceVnd Int?
 
-	inquiry ProductInquiry @relation(fields: [inquiryId], references: [id])
-	sender  User           @relation(fields: [senderId], references: [id])
+  inquiry ProductInquiry @relation(fields: [inquiryId], references: [id])
+  sender  User           @relation(fields: [senderId], references: [id])
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@index([inquiryId, createdAt])
-	@@index([senderId, createdAt])
+  @@index([inquiryId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model ProductViewEvent {
-	id        String  @id @default(uuid())
-	productId String
-	viewerId  String?
+  id        String  @id @default(uuid())
+  productId String
+  viewerId  String?
 
-	product Product @relation(fields: [productId], references: [id])
-	viewer  User?   @relation(fields: [viewerId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  viewer  User?   @relation(fields: [viewerId], references: [id])
 
-	viewedAt DateTime @default(now())
+  viewedAt DateTime @default(now())
 
-	@@index([productId, viewedAt])
-	@@index([viewerId, viewedAt])
+  @@index([productId, viewedAt])
+  @@index([viewerId, viewedAt])
 }
 
 model Cart {
-	id     String @id @default(uuid())
-	userId String @unique
-	user   User   @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-	items CartItem[]
+  items CartItem[]
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model CartItem {
-	id        String  @id @default(uuid())
-	cartId    String
-	productId String
-	quantity  Int     @default(1)
+  id        String @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int    @default(1)
 
-	cart    Cart    @relation(fields: [cartId], references: [id])
-	product Product @relation(fields: [productId], references: [id])
+  cart    Cart    @relation(fields: [cartId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@unique([cartId, productId])
-	@@index([productId])
+  @@unique([cartId, productId])
+  @@index([productId])
 }
 
 model Post {
-	id       String @id @default(uuid())
-	authorId String
-	author   User   @relation(fields: [authorId], references: [id])
+  id       String @id @default(uuid())
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
 
-	content  String
-	imageUrl String?
-	tags     String?
+  content  String
+  imageUrl String?
+  tags     String?
 
-	likeCount Int @default(0)
-	moderationStatus ModerationStatus @default(APPROVED)
-	moderatedAt DateTime?
-	moderatedBy String?
+  likeCount        Int              @default(0)
+  moderationStatus ModerationStatus @default(APPROVED)
+  moderatedAt      DateTime?
+  moderatedBy      String?
 
-	likes PostLike[]
-	comments PostComment[]
+  likes    PostLike[]
+  comments PostComment[]
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
-	deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-	@@index([authorId])
-	@@index([deletedAt])
-	@@index([moderationStatus])
+  @@index([authorId])
+  @@index([deletedAt])
+  @@index([moderationStatus])
 }
 
 model PostComment {
-	id      String @id @default(uuid())
-	postId  String
-	authorId String
-	content String
+  id       String @id @default(uuid())
+  postId   String
+  authorId String
+  content  String
 
-	post   Post @relation(fields: [postId], references: [id])
-	author User @relation(fields: [authorId], references: [id])
+  post   Post @relation(fields: [postId], references: [id])
+  author User @relation(fields: [authorId], references: [id])
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@index([postId, createdAt])
-	@@index([authorId])
+  @@index([postId, createdAt])
+  @@index([authorId])
 }
 
 model PostLike {
-	id     String @id @default(uuid())
-	postId String
-	userId String
+  id     String @id @default(uuid())
+  postId String
+  userId String
 
-	post Post @relation(fields: [postId], references: [id])
-	user User @relation(fields: [userId], references: [id])
+  post Post @relation(fields: [postId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@unique([postId, userId])
-	@@index([userId])
+  @@unique([postId, userId])
+  @@index([userId])
 }
 
 model Event {
-	id          String   @id @default(uuid())
-	title       String
-	startAt     DateTime
-	endAt       DateTime?
-	location    String
-	imageUrl    String?
-	description String
-	organizer   String?
-	moderationStatus ModerationStatus @default(APPROVED)
-	moderatedAt DateTime?
-	moderatedBy String?
+  id               String           @id @default(uuid())
+  title            String
+  startAt          DateTime
+  endAt            DateTime?
+  location         String
+  imageUrl         String?
+  description      String
+  organizer        String?
+  moderationStatus ModerationStatus @default(APPROVED)
+  moderatedAt      DateTime?
+  moderatedBy      String?
 
-	rsvps EventRsvp[]
+  rsvps EventRsvp[]
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
-	deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-	@@index([deletedAt])
-	@@index([moderationStatus])
+  @@index([deletedAt])
+  @@index([moderationStatus])
 }
 
 model EventRsvp {
-	id      String @id @default(uuid())
-	eventId String
-	userId  String
+  id      String @id @default(uuid())
+  eventId String
+  userId  String
 
-	event Event @relation(fields: [eventId], references: [id])
-	user  User  @relation(fields: [userId], references: [id])
+  event Event @relation(fields: [eventId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@unique([eventId, userId])
-	@@index([userId])
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model PollutionReport {
-	id          String        @id @default(uuid())
-	ownerId     String
-	owner       User          @relation(fields: [ownerId], references: [id])
-	lat         Float
-	lng         Float
-	type        String
-	severity    Int
-	description String
-	isAnonymous Boolean       @default(false)
-	moderationStatus ModerationStatus @default(APPROVED)
-	moderatedAt DateTime?
-	moderatedBy String?
+  id               String           @id @default(uuid())
+  ownerId          String
+  owner            User             @relation(fields: [ownerId], references: [id])
+  lat              Float
+  lng              Float
+  type             String
+  severity         Int
+  description      String
+  isAnonymous      Boolean          @default(false)
+  moderationStatus ModerationStatus @default(APPROVED)
+  moderatedAt      DateTime?
+  moderatedBy      String?
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
-	deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-	@@index([type])
-	@@index([ownerId])
-	@@index([deletedAt])
-	@@index([moderationStatus])
+  @@index([type])
+  @@index([ownerId])
+  @@index([deletedAt])
+  @@index([moderationStatus])
 }
 
 model AdminAuditLog {
-	id            String    @id @default(uuid())
-	adminEmail    String
-	adminRole     AdminRole
-	action        String
-	resource      String
-	resourceId    String?
-	status        String
-	message       String?
-	ip            String?
-	userAgent     String?
-	requestId     String?
-	metadataJson  String?
-	createdAt     DateTime  @default(now())
+  id           String    @id @default(uuid())
+  adminEmail   String
+  adminRole    AdminRole
+  action       String
+  resource     String
+  resourceId   String?
+  status       String
+  message      String?
+  ip           String?
+  userAgent    String?
+  requestId    String?
+  metadataJson String?
+  createdAt    DateTime  @default(now())
 
-	@@index([createdAt])
-	@@index([adminEmail])
-	@@index([resource, action])
+  @@index([createdAt])
+  @@index([adminEmail])
+  @@index([resource, action])
 }
 
 model LoginAttempt {
-	id        String   @id @default(uuid())
-	userId    String?
-	user      User?    @relation(fields: [userId], references: [id])
-	email     String
-	ip        String
-	userAgent String?
-	success   Boolean
-	createdAt DateTime @default(now())
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  email     String
+  ip        String
+  userAgent String?
+  success   Boolean
+  createdAt DateTime @default(now())
 
-	@@index([email])
-	@@index([ip])
-	@@index([createdAt])
+  @@index([email])
+  @@index([ip])
+  @@index([createdAt])
 }
 
 model UserPreference {
-	id                  String  @id @default(uuid())
-	userId              String  @unique
-	user                User    @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-	emailUpdates        Boolean @default(true)
-	marketplaceUpdates  Boolean @default(true)
-	pollutionAlerts     Boolean @default(true)
-	securityAlerts      Boolean @default(true)
-	weeklyDigest        Boolean @default(false)
+  emailUpdates       Boolean @default(true)
+  marketplaceUpdates Boolean @default(true)
+  pollutionAlerts    Boolean @default(true)
+  securityAlerts     Boolean @default(true)
+  weeklyDigest       Boolean @default(false)
 
-	language            String  @default("vi")
-	dateFormat          String  @default("locale")
-	publicProfile       Boolean @default(false)
-	showLastLogin       Boolean @default(true)
-	defaultAnonymousReports Boolean @default(false)
-	soundEffects        Boolean @default(true)
-	reducedMotion       Boolean @default(false)
-	mapAutoLocate       Boolean @default(true)
+  language                String  @default("vi")
+  dateFormat              String  @default("locale")
+  publicProfile           Boolean @default(false)
+  showLastLogin           Boolean @default(true)
+  defaultAnonymousReports Boolean @default(false)
+  soundEffects            Boolean @default(true)
+  reducedMotion           Boolean @default(false)
+  mapAutoLocate           Boolean @default(true)
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@index([updatedAt])
+  @@index([updatedAt])
 }
 
 // ===== BLOCKCHAIN MODELS =====
 
 model BlockchainRecord {
-	id            String   @id @default(uuid())
-	productId     String
-	product       Product  @relation(fields: [productId], references: [id])
-	txHash        String   @unique
-	ipfsHash      String
-	contractAddr  String
-	chainId       Int      @default(80002)
-	walletAddress String
-	status        String   @default("CONFIRMED")
+  id            String  @id @default(uuid())
+  productId     String
+  product       Product @relation(fields: [productId], references: [id])
+  txHash        String  @unique
+  ipfsHash      String
+  contractAddr  String
+  chainId       Int     @default(80002)
+  walletAddress String
+  status        String  @default("CONFIRMED")
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@index([productId])
-	@@index([txHash])
-	@@index([status])
+  @@index([productId])
+  @@index([txHash])
+  @@index([status])
 }
 
 model EscrowContract {
-	id            String   @id @default(uuid())
-	inquiryId     String
-	inquiry       ProductInquiry @relation(fields: [inquiryId], references: [id])
-	buyerAddress  String
-	sellerAddress String
-	amountWei     String
-	txHash        String?
-	contractAddr  String?
-	status        String   @default("CREATED")
+  id            String         @id @default(uuid())
+  inquiryId     String
+  inquiry       ProductInquiry @relation(fields: [inquiryId], references: [id])
+  buyerAddress  String
+  sellerAddress String
+  amountWei     String
+  txHash        String?
+  contractAddr  String?
+  status        String         @default("CREATED")
 
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-	@@index([inquiryId])
-	@@index([status])
+  @@index([inquiryId])
+  @@index([status])
 }
 
 model GreenTokenLedger {
-	id          String   @id @default(uuid())
-	userId      String
-	user        User     @relation(fields: [userId], references: [id])
-	amount      Int
-	action      String
-	referenceId String?
-	txHash      String?
+  id          String  @id @default(uuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id])
+  amount      Int
+  action      String
+  referenceId String?
+  txHash      String?
 
-	createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-	@@index([userId])
-	@@index([action])
-	@@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }

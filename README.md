@@ -66,6 +66,42 @@ After enabling Accelerate in https://console.prisma.io/, set:
 
 Prisma CLI commands (`prisma db push`, migrate, introspection, seed) use `DIRECT_DATABASE_URL` via `prisma.config.ts`.
 
+## 🤖 Anomaly Detection: Điểm đốt/ô nhiễm → Cơ hội giao dịch
+
+Backend đã hỗ trợ API phát hiện điểm nóng ô nhiễm bằng cách kết hợp:
+
+- Báo cáo cộng đồng (`pollutionReport` đã duyệt)
+- Dữ liệu môi trường công bố (ví dụ Envisoft-compatible feed)
+
+### Endpoint
+
+- `GET /api/pollution/opportunities`
+
+Query params:
+
+- `take` (1-20, mặc định 6): số điểm nóng trả về
+- `include_external` (`true/false`, mặc định `true`): có dùng nguồn dữ liệu công khai không
+- `products_per_opportunity` (1-10, mặc định 5): số gợi ý giao dịch cho mỗi điểm nóng
+
+Response gồm:
+
+- `opportunities[]` với `anomaly_score`, `priority`, `drivers`
+- `recommended_categories`, `suggested_interventions`
+- `tradable_products[]` (sản phẩm gần khu vực để kích hoạt giao dịch nhanh)
+
+### Cấu hình nguồn dữ liệu môi trường (tuỳ chọn)
+
+```bash
+ENVIRONMENT_FEED_URL=https://<your-environment-public-api>
+# hoặc
+ENVISOFT_FEED_URL=https://<your-envisoft-compatible-api>
+
+ENVIRONMENT_FEED_PROVIDER=envisoft-compatible
+ENVIRONMENT_FEED_API_KEY=<optional_bearer_token>
+```
+
+Nếu không cấu hình feed URL, API vẫn hoạt động với dữ liệu cộng đồng nội bộ.
+
 ## 🗺️ Kế Hoạch Triển Khai (Milestones)
 
 ### Phase 1: Foundation & Auth (Current) ✅

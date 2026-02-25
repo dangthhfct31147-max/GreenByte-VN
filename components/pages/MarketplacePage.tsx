@@ -12,10 +12,11 @@ import {
   Loader2,
   Check,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, sendAiFeedback } from '@/utils/api';
 import OptimizedImage from '../ui/OptimizedImage';
 import Pagination from '../ui/Pagination';
 import { AppSelect } from '../ui/AppSelect';
@@ -76,6 +77,16 @@ interface AssistantTurn {
   role: 'user' | 'assistant';
   content: string;
 }
+
+type PriceSuggestion = {
+  min_price: number;
+  max_price: number;
+  median_price: number;
+  suggested_range: [number, number];
+  factors: string[];
+  sample_count: number;
+  confidence: 'high' | 'medium' | 'low';
+};
 
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
 const DEFAULT_PRODUCT_IMAGE = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%22800%22 viewBox=%220 0 1200 800%22%3E%3Crect width=%221200%22 height=%22800%22 fill=%22%23e2e8f0%22/%3E%3Cg fill=%22%2394a3b8%22%3E%3Ccircle cx=%22600%22 cy=%22310%22 r=%2260%22/%3E%3Cpath d=%22M430 520c40-78 104-118 170-118s130 40 170 118z%22/%3E%3C/g%3E%3Ctext x=%22600%22 y=%22620%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2236%22 fill=%2264748b%22%3EAnh san pham%3C/text%3E%3C/svg%3E';
@@ -591,6 +602,9 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
   const [assistantConversation, setAssistantConversation] = useState<AssistantTurn[]>([]);
   const [hasAutoAssistantRun, setHasAutoAssistantRun] = useState(false);
   const [autoRefreshChecklistEnabled, setAutoRefreshChecklistEnabled] = useState(true);
+  const [priceSuggestion, setPriceSuggestion] = useState<PriceSuggestion | null>(null);
+  const [isPriceSuggesting, setIsPriceSuggesting] = useState(false);
+  const [priceSuggestionError, setPriceSuggestionError] = useState<string | null>(null);
   const [formData, setFormData] = useState(DEFAULT_CREATE_FORM);
   const lastAutoRefreshSignatureRef = useRef<string>('');
   const hasTriggeredInitialAssistantRef = useRef(false);
@@ -732,6 +746,14 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       category: visionSuggestion.category,
       quality_score: String(visionSuggestion.recommended_quality_score),
     }));
+    sendAiFeedback({
+      module: 'VISION_CLASSIFIER',
+      event_type: 'APPLY',
+      category: visionSuggestion.category,
+      metadata: {
+        recommended_quality_score: visionSuggestion.recommended_quality_score,
+      },
+    });
   };
 
   const requestSellerAssistant = async (message: string, conversationInput: AssistantTurn[], appendUserTurn: boolean) => {
@@ -876,6 +898,69 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
       title: assistantGuidance.suggested_title?.trim() ? assistantGuidance.suggested_title : prev.title,
       description: assistantGuidance.normalized_description?.trim() ? assistantGuidance.normalized_description : prev.description,
     }));
+    sendAiFeedback({
+      module: 'SELLER_ASSISTANT',
+      event_type: 'APPLY',
+      category: formData.category.trim() || undefined,
+      location: formData.location.trim() || undefined,
+      metadata: {
+        has_suggested_title: Boolean(assistantGuidance.suggested_title),
+        has_normalized_description: Boolean(assistantGuidance.normalized_description),
+      },
+    });
+  };
+
+  const handlePriceSuggestion = async () => {
+    if (!user) {
+      alert('Vui lòng đăng nhập để dùng AI gợi ý giá.');
+      return;
+    }
+
+    const category = formData.category.trim();
+    if (!category) {
+      setPriceSuggestionError('Vui lòng chọn danh mục trước khi gợi ý giá.');
+      return;
+    }
+
+    setIsPriceSuggesting(true);
+    setPriceSuggestionError(null);
+
+    try {
+      const res = await apiFetch('products/price-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category,
+          location: formData.location.trim() || undefined,
+          quality_score: Number(formData.quality_score) || undefined,
+          unit: formData.unit.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as any;
+      if (!res.ok) throw new Error(data?.error ?? 'Không thể gợi ý giá');
+
+      setPriceSuggestion(data?.suggestion as PriceSuggestion);
+    } catch (err: any) {
+      setPriceSuggestionError(err?.message ?? 'AI gợi ý giá tạm thời bận.');
+      setPriceSuggestion(null);
+    } finally {
+      setIsPriceSuggesting(false);
+    }
+  };
+
+  const applyPriceSuggestion = () => {
+    if (!priceSuggestion) return;
+    setFormData((prev) => ({ ...prev, price: String(priceSuggestion.median_price) }));
+    sendAiFeedback({
+      module: 'PRICE_SUGGESTION',
+      event_type: 'APPLY',
+      category: formData.category.trim() || undefined,
+      location: formData.location.trim() || undefined,
+      metadata: {
+        suggested_price: priceSuggestion.median_price,
+        confidence: priceSuggestion.confidence,
+      },
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1172,8 +1257,63 @@ const CreateListingModal: React.FC<{ isOpen: boolean, onClose: () => void, onSub
                     placeholder="0"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                     value={formData.price}
-                    onChange={e => setFormData({ ...formData, price: e.target.value })}
+                    onChange={e => { setFormData({ ...formData, price: e.target.value }); setPriceSuggestion(null); }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => void handlePriceSuggestion()}
+                    disabled={isPriceSuggesting}
+                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 hover:border-violet-300 hover:bg-violet-100 disabled:opacity-60 transition-colors"
+                  >
+                    {isPriceSuggesting ? <Loader2 size={13} className="animate-spin" /> : <TrendingUp size={13} />}
+                    AI gợi ý giá
+                  </button>
+                  {priceSuggestionError && <p className="mt-1 text-xs text-rose-600">{priceSuggestionError}</p>}
+                  {priceSuggestion && (
+                    <div className="mt-2 rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50/50 p-3 text-xs text-slate-700 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-violet-800 flex items-center gap-1.5"><TrendingUp size={13} /> Gợi ý giá tham chiếu</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${priceSuggestion.confidence === 'high' ? 'bg-emerald-100 text-emerald-700' :
+                          priceSuggestion.confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                          {priceSuggestion.confidence === 'high' ? 'Độ tin cậy cao' : priceSuggestion.confidence === 'medium' ? 'Độ tin cậy TB' : 'Ít dữ liệu'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-md bg-white/80 border border-violet-100 p-2">
+                          <div className="text-[10px] text-slate-500 uppercase">Thấp nhất</div>
+                          <div className="font-bold text-slate-800">{priceSuggestion.suggested_range[0].toLocaleString('vi-VN')}₫</div>
+                        </div>
+                        <div className="rounded-md bg-violet-100/60 border border-violet-200 p-2 ring-2 ring-violet-300/30">
+                          <div className="text-[10px] text-violet-600 uppercase font-semibold">Đề xuất</div>
+                          <div className="font-bold text-violet-800">{priceSuggestion.median_price.toLocaleString('vi-VN')}₫</div>
+                        </div>
+                        <div className="rounded-md bg-white/80 border border-violet-100 p-2">
+                          <div className="text-[10px] text-slate-500 uppercase">Cao nhất</div>
+                          <div className="font-bold text-slate-800">{priceSuggestion.suggested_range[1].toLocaleString('vi-VN')}₫</div>
+                        </div>
+                      </div>
+                      {priceSuggestion.factors.length > 0 && (
+                        <div>
+                          <div className="font-medium text-slate-700 mb-1">Yếu tố phân tích:</div>
+                          <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
+                            {priceSuggestion.factors.map((f, i) => <li key={i}>{f}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={applyPriceSuggestion}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-white font-medium hover:bg-violet-700 transition-colors shadow-sm"
+                        >
+                          <Check size={13} /> Áp dụng giá đề xuất
+                        </button>
+                        <span className="text-[10px] text-slate-500">({priceSuggestion.sample_count} sản phẩm tham chiếu)</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="product-quality" className="block text-sm font-medium text-slate-700 mb-1">Chất lượng (1-5)</label>

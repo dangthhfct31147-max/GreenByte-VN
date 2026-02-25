@@ -58,3 +58,58 @@ export function apiFetch(endpoint: string, init?: RequestInit): Promise<Response
         credentials: 'include',
     });
 }
+
+type AiFeedbackPayload = {
+    module: 'RECOMMENDATIONS' | 'SELLER_ASSISTANT' | 'PRICE_SUGGESTION' | 'MATCH_BUYERS' | 'VISION_CLASSIFIER';
+    event_type:
+    | 'REQUEST'
+    | 'IMPRESSION'
+    | 'CLICK'
+    | 'APPLY'
+    | 'VIEW'
+    | 'CART_ADD'
+    | 'INQUIRY_OPEN'
+    | 'INQUIRY_ACCEPTED'
+    | 'INQUIRY_REJECTED'
+    | 'REVIEW_POSITIVE'
+    | 'REVIEW_NEGATIVE';
+    product_id?: string;
+    inquiry_id?: string;
+    category?: string;
+    location?: string;
+    metadata?: Record<string, unknown>;
+};
+
+const AI_SESSION_KEY = 'eco_ai_session_id';
+
+function resolveAiSessionId(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    try {
+        const existing = window.localStorage.getItem(AI_SESSION_KEY);
+        if (existing && existing.trim().length > 0) return existing;
+
+        const generated =
+            typeof window.crypto?.randomUUID === 'function'
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        window.localStorage.setItem(AI_SESSION_KEY, generated);
+        return generated;
+    } catch {
+        return undefined;
+    }
+}
+
+export function sendAiFeedback(payload: AiFeedbackPayload): void {
+    const sessionId = resolveAiSessionId();
+
+    void apiFetch('ai/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ...payload,
+            session_id: sessionId,
+        }),
+        keepalive: true,
+    }).catch(() => undefined);
+}

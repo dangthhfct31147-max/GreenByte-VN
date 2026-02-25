@@ -536,7 +536,11 @@ export default function App() {
           />
         )}
         {currentRoute === 'map' && (
-          <MapPage user={user} onLoginRequest={() => navigate('signup')} />
+          <MapPage
+            user={user}
+            onLoginRequest={() => navigate('signup')}
+            onViewProduct={(productId) => navigate('product', productId)}
+          />
         )}
         {currentRoute === 'community' && (
           <CommunityPage user={user} onLoginRequest={() => navigate('signup')} />

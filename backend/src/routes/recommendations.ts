@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { optionalAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { getAdaptiveRecommendationWeights, trackAiUsageEvent } from '../lib/aiLearning';
 
 export const recommendationsRouter = Router();
 
@@ -87,13 +88,15 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
         const takeEvents = query.takeEvents ?? 4;
 
         const userId = req.user?.id;
+        const adaptive = await getAdaptiveRecommendationWeights();
+        const { behaviorSignals, productScoring, discussionScoring, eventScoring, learningSnapshot } = adaptive;
 
         const categoryScores = new Map<string, number>();
         const tagScores = new Map<string, number>();
         const locationTokens = new Set<string>();
 
         if (userId) {
-            const [views, inquiries, reviews, cartItems, likedPosts, commentedPosts, ownPosts, rsvps] = await Promise.all([
+            const [views, inquiries, acceptedInquiries, reviews, cartItems, likedPosts, commentedPosts, ownPosts, rsvps, aiSignals] = await Promise.all([
                 (prisma as any).productViewEvent.findMany({
                     where: { viewerId: userId },
                     take: 150,
@@ -103,6 +106,12 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
                 (prisma as any).productInquiry.findMany({
                     where: { buyerId: userId },
                     take: 120,
+                    orderBy: { updatedAt: 'desc' },
+                    select: { product: { select: { category: true, location: true } } },
+                }),
+                (prisma as any).productInquiry.findMany({
+                    where: { buyerId: userId, status: 'ACCEPTED' },
+                    take: 100,
                     orderBy: { updatedAt: 'desc' },
                     select: { product: { select: { category: true, location: true } } },
                 }),
@@ -142,6 +151,16 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
                     orderBy: { createdAt: 'desc' },
                     select: { event: { select: { location: true, title: true, description: true } } },
                 }),
+                (prisma as any).aiUsageEvent.findMany({
+                    where: {
+                        userId,
+                        module: 'RECOMMENDATIONS',
+                        eventType: { in: ['CLICK', 'CART_ADD', 'INQUIRY_OPEN', 'INQUIRY_ACCEPTED'] },
+                    },
+                    take: 150,
+                    orderBy: { createdAt: 'desc' },
+                    select: { eventType: true, category: true, location: true },
+                }),
             ]);
 
             const addCategory = (category: string | null | undefined, weight: number) => {
@@ -164,19 +183,23 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
             };
 
             for (const row of views) {
-                addCategory(row.product?.category, 1.1);
+                addCategory(row.product?.category, behaviorSignals.view);
                 addLocation(row.product?.location);
             }
             for (const row of inquiries) {
-                addCategory(row.product?.category, 2.2);
+                addCategory(row.product?.category, behaviorSignals.inquiry);
+                addLocation(row.product?.location);
+            }
+            for (const row of acceptedInquiries) {
+                addCategory(row.product?.category, behaviorSignals.accepted);
                 addLocation(row.product?.location);
             }
             for (const row of reviews) {
-                addCategory(row.product?.category, 1.6);
+                addCategory(row.product?.category, behaviorSignals.review);
                 addLocation(row.product?.location);
             }
             for (const row of cartItems) {
-                addCategory(row.product?.category, 2.8);
+                addCategory(row.product?.category, behaviorSignals.cart);
                 addLocation(row.product?.location);
             }
 
@@ -189,6 +212,20 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
                 for (const token of tokenizeText(`${row.event?.title ?? ''} ${row.event?.description ?? ''}`)) {
                     locationTokens.add(token);
                 }
+            }
+
+            for (const signal of aiSignals) {
+                const signalWeight =
+                    signal.eventType === 'INQUIRY_ACCEPTED'
+                        ? behaviorSignals.accepted
+                        : signal.eventType === 'INQUIRY_OPEN'
+                            ? behaviorSignals.inquiry * 1.1
+                            : signal.eventType === 'CART_ADD'
+                                ? behaviorSignals.cart
+                                : behaviorSignals.view * 1.25;
+
+                addCategory(signal.category, signalWeight);
+                addLocation(signal.location);
             }
         }
 
@@ -243,11 +280,13 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
         const productsScored = productRows
             .map((item: any) => {
                 const categoryAffinity = categoryScores.get(item.category) ?? 0;
-                const locationMatch = tokenizeText(item.location).some((token) => locationTokens.has(token)) ? 1.4 : 0;
-                const qualitySignal = Number(item.qualityScore ?? 3) * 0.6;
-                const freshness = recencyScore(item.createdAt, 9);
+                const locationMatch = tokenizeText(item.location).some((token) => locationTokens.has(token))
+                    ? productScoring.locationMatch
+                    : 0;
+                const qualitySignal = Number(item.qualityScore ?? 3) * productScoring.qualityScale;
+                const freshness = recencyScore(item.createdAt, 9) * productScoring.freshnessScale;
 
-                const score = categoryAffinity * 3 + locationMatch + qualitySignal + freshness;
+                const score = categoryAffinity * productScoring.categoryAffinityScale + locationMatch + qualitySignal + freshness;
 
                 let reason = 'Tin đăng mới phù hợp để tham khảo.';
                 if (categoryAffinity > 0) {
@@ -280,10 +319,12 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
             .map((item: any) => {
                 const tags = parseTags(item.tags);
                 const tagAffinity = tags.reduce((sum, tag) => sum + (tagScores.get(tag) ?? 0), 0);
-                const popularity = Number(item.likeCount ?? 0) * 0.05 + Number(item._count?.comments ?? 0) * 0.08;
-                const freshness = recencyScore(item.createdAt, 7);
+                const popularity =
+                    Number(item.likeCount ?? 0) * discussionScoring.likeWeight +
+                    Number(item._count?.comments ?? 0) * discussionScoring.commentWeight;
+                const freshness = recencyScore(item.createdAt, 7) * discussionScoring.freshnessScale;
 
-                const score = tagAffinity * 2.5 + popularity + freshness;
+                const score = tagAffinity * discussionScoring.tagAffinityScale + popularity + freshness;
 
                 let reason = 'Thảo luận đang được quan tâm trong cộng đồng.';
                 if (tagAffinity > 0 && tags.length) {
@@ -313,10 +354,12 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
         const eventsScored = eventRows
             .map((item: any) => {
                 const placeTokens = tokenizeText(`${item.location} ${item.title} ${item.description ?? ''}`);
-                const locationAffinity = placeTokens.some((token) => locationTokens.has(token)) ? 2.2 : 0;
-                const popularity = Number(item._count?.rsvps ?? 0) * 0.06;
+                const locationAffinity = placeTokens.some((token) => locationTokens.has(token))
+                    ? eventScoring.locationAffinity
+                    : 0;
+                const popularity = Number(item._count?.rsvps ?? 0) * eventScoring.popularityWeight;
                 const daysUntil = Math.max(0, (new Date(item.startAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                const timing = Math.max(0, 3 - daysUntil / 10);
+                const timing = Math.max(0, (3 - daysUntil / 10) * eventScoring.timingScale);
 
                 const score = locationAffinity + popularity + timing;
 
@@ -442,8 +485,29 @@ recommendationsRouter.get('/recommendations', optionalAuth, async (req: Authenti
 
         const basedOn = [
             ...(behaviorHints.length > 0 ? behaviorHints : ['Xu hướng phổ biến toàn hệ thống']),
+            ...(learningSnapshot.impressions > 0
+                ? [
+                    `Tự học từ ${learningSnapshot.impressions} lượt gợi ý, ${learningSnapshot.acceptedInquiries} tín hiệu chốt đơn`,
+                ]
+                : []),
             ...(usedFallback ? ['Bổ sung từ nội dung phổ biến'] : []),
         ];
+
+        if (userId && productsFinal.length > 0) {
+            void Promise.all(
+                productsFinal.slice(0, Math.min(10, takeProducts)).map((item: ProductRecommendation) =>
+                    trackAiUsageEvent({
+                        module: 'RECOMMENDATIONS',
+                        eventType: 'IMPRESSION',
+                        userId,
+                        productId: item.id,
+                        category: item.category,
+                        location: item.location,
+                        metadata: { reason: item.reason },
+                    }),
+                ),
+            );
+        }
 
         return res.json({
             personalized: Boolean(userId),

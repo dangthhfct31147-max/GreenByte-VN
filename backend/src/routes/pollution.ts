@@ -2,8 +2,20 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { optionalAuth, requireAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { getPollutionTradeOpportunities } from '../lib/pollutionOpportunity';
 
 export const pollutionRouter = Router();
+
+const PollutionOpportunityQuerySchema = z.object({
+    take: z.coerce.number().int().min(1).max(20).optional(),
+    include_external: z
+        .union([
+            z.boolean(),
+            z.string().transform((value) => ['1', 'true', 'yes', 'on'].includes(value.toLowerCase())),
+        ])
+        .optional(),
+    products_per_opportunity: z.coerce.number().int().min(1).max(10).optional(),
+});
 
 function humanizeFromDate(date: Date): string {
     const diffMs = Date.now() - date.getTime();
@@ -43,6 +55,22 @@ pollutionRouter.get('/pollution', optionalAuth, async (req: AuthenticatedRequest
         }));
 
         res.json({ markers });
+    } catch (err) {
+        next(err);
+    }
+});
+
+pollutionRouter.get('/pollution/opportunities', optionalAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const query = PollutionOpportunityQuerySchema.parse(req.query);
+
+        const result = await getPollutionTradeOpportunities({
+            take: query.take,
+            includeExternal: query.include_external,
+            productsPerOpportunity: query.products_per_opportunity,
+        });
+
+        res.json(result);
     } catch (err) {
         next(err);
     }

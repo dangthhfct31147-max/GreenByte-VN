@@ -69,6 +69,41 @@ interface DashboardData {
     futureModules: string[];
 }
 
+interface AiEventsAnalyticsData {
+    module: string;
+    weeks: number;
+    from: string;
+    to: string;
+    totals: {
+        impressions: number;
+        clicks: number;
+        carts: number;
+        inquiries: number;
+        accepted: number;
+        ctr_pct: number;
+        cart_rate_pct: number;
+        inquiry_rate_pct: number;
+        accepted_rate_pct: number;
+        accepted_from_click_pct: number;
+        accepted_from_impression_pct: number;
+    };
+    timeline: Array<{
+        week_start: string;
+        week_end: string;
+        impressions: number;
+        clicks: number;
+        carts: number;
+        inquiries: number;
+        accepted: number;
+        ctr_pct: number;
+        cart_rate_pct: number;
+        inquiry_rate_pct: number;
+        accepted_rate_pct: number;
+        accepted_from_click_pct: number;
+        accepted_from_impression_pct: number;
+    }>;
+}
+
 const TABS: Array<{ id: AdminTab; label: string; icon: React.ComponentType<{ size?: number | string }> }> = [
     { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { id: 'analytics', label: 'Vận hành (P3)', icon: Activity },
@@ -116,6 +151,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
     const [alerts, setAlerts] = useState<any[]>([]);
     const [sla, setSla] = useState<any | null>(null);
     const [auditSummary, setAuditSummary] = useState<any | null>(null);
+    const [aiEventsAnalytics, setAiEventsAnalytics] = useState<AiEventsAnalyticsData | null>(null);
     const [queueingLowConfidence, setQueueingLowConfidence] = useState(false);
     const [moderationCounts, setModerationCounts] = useState<ModerationCounts>({ all: 0, posts: 0, events: 0, pollution: 0, products: 0 });
     const [selectedModerationAiDetail, setSelectedModerationAiDetail] = useState<ModerationProductAiDetail | null>(null);
@@ -143,29 +179,33 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
             }
 
             if (tab === 'analytics') {
-                const [overviewRes, alertsRes, slaRes, auditRes] = await Promise.all([
+                const [overviewRes, alertsRes, slaRes, auditRes, aiEventsRes] = await Promise.all([
                     adminFetch('analytics/overview?days=14'),
                     adminFetch('analytics/alerts'),
                     adminFetch('analytics/sla'),
                     adminFetch('audit-summary?days=14'),
+                    adminFetch('analytics/ai-events?weeks=8&module=RECOMMENDATIONS'),
                 ]);
 
-                const [overviewData, alertsData, slaData, auditData] = await Promise.all([
+                const [overviewData, alertsData, slaData, auditData, aiEventsData] = await Promise.all([
                     overviewRes.json(),
                     alertsRes.json(),
                     slaRes.json(),
                     auditRes.json(),
+                    aiEventsRes.json(),
                 ]);
 
                 if (!overviewRes.ok) throw new Error(overviewData?.error ?? 'Không thể tải analytics overview');
                 if (!alertsRes.ok) throw new Error(alertsData?.error ?? 'Không thể tải alerts');
                 if (!slaRes.ok) throw new Error(slaData?.error ?? 'Không thể tải SLA');
                 if (!auditRes.ok) throw new Error(auditData?.error ?? 'Không thể tải audit summary');
+                if (!aiEventsRes.ok) throw new Error(aiEventsData?.error ?? 'Không thể tải AI events analytics');
 
                 setAnalyticsOverview(overviewData);
                 setAlerts(Array.isArray(alertsData?.alerts) ? alertsData.alerts : []);
                 setSla(slaData?.sla ?? null);
                 setAuditSummary(auditData ?? null);
+                setAiEventsAnalytics(aiEventsData as AiEventsAnalyticsData);
                 return;
             }
 
@@ -880,6 +920,43 @@ export const AdminPage: React.FC<AdminPageProps> = ({ adminEmail, onLogout, onBa
                                 <StatCard label="Locked users" value={analyticsOverview?.kpis?.lockedUsers ?? 0} />
                                 <StatCard label="SLA health" value={sla?.health ?? '-'} />
                             </div>
+
+                            {aiEventsAnalytics && (
+                                <div className="border border-slate-100 rounded-xl p-4 space-y-4">
+                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1">
+                                        <h3 className="font-semibold text-slate-900">AI Funnel theo tuần ({aiEventsAnalytics.module})</h3>
+                                        <div className="text-xs text-slate-500">
+                                            {aiEventsAnalytics.from} → {aiEventsAnalytics.to} ({aiEventsAnalytics.weeks} tuần)
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+                                        <StatCard label="Impression" value={aiEventsAnalytics.totals.impressions} />
+                                        <StatCard label="Click" value={aiEventsAnalytics.totals.clicks} />
+                                        <StatCard label="CTR" value={`${aiEventsAnalytics.totals.ctr_pct}%`} />
+                                        <StatCard label="Cart" value={aiEventsAnalytics.totals.carts} />
+                                        <StatCard label="Inquiry" value={aiEventsAnalytics.totals.inquiries} />
+                                        <StatCard label="Accepted" value={aiEventsAnalytics.totals.accepted} />
+                                        <StatCard label="Cart/Click" value={`${aiEventsAnalytics.totals.cart_rate_pct}%`} />
+                                        <StatCard label="Accepted/Inquiry" value={`${aiEventsAnalytics.totals.accepted_rate_pct}%`} />
+                                    </div>
+
+                                    <AdminTable headers={['Tuần', 'Impression', 'Click', 'CTR', 'Cart', 'Inquiry', 'Accepted', 'Accepted/Inquiry']}>
+                                        {aiEventsAnalytics.timeline.map((row) => (
+                                            <tr key={row.week_start} className="border-b border-slate-100">
+                                                <td className="py-2 px-2 text-slate-700">{row.week_start} - {row.week_end}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.impressions}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.clicks}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.ctr_pct}%</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.carts}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.inquiries}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.accepted}</td>
+                                                <td className="py-2 px-2 text-slate-700">{row.accepted_rate_pct}%</td>
+                                            </tr>
+                                        ))}
+                                    </AdminTable>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                 <div className="border border-slate-100 rounded-xl p-4">

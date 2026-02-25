@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Leaf, Map as MapIcon, RefreshCw, Users, TrendingUp, Globe, Heart, BookOpen, Quote, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { apiFetch } from '@/utils/api';
+import { apiFetch, sendAiFeedback } from '@/utils/api';
 
 // Inspiring stories data
 const inspiringStories = [
@@ -157,6 +157,38 @@ export const HomePage = ({
       currency: 'VND',
       maximumFractionDigits: 0,
     }).format(price);
+
+  const handleProductRecommendationClick = (item: RecommendationProduct) => {
+    sendAiFeedback({
+      module: 'RECOMMENDATIONS',
+      event_type: 'CLICK',
+      product_id: item.id,
+      category: item.category,
+      location: item.location,
+      metadata: { surface: 'home_recommendations' },
+    });
+    onNavigate('product', item.id);
+  };
+
+  const handleDiscussionRecommendationClick = (item: RecommendationDiscussion) => {
+    sendAiFeedback({
+      module: 'RECOMMENDATIONS',
+      event_type: 'CLICK',
+      category: item.tags?.[0],
+      metadata: { surface: 'home_discussions', discussion_id: item.id },
+    });
+    onNavigate('community');
+  };
+
+  const handleEventRecommendationClick = (item: RecommendationEvent) => {
+    sendAiFeedback({
+      module: 'RECOMMENDATIONS',
+      event_type: 'CLICK',
+      location: item.location,
+      metadata: { surface: 'home_events', event_id: item.id },
+    });
+    onNavigate('community');
+  };
 
   return (
     <div className="flex flex-col select-none">
@@ -405,7 +437,7 @@ export const HomePage = ({
                     recommendations.products.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => onNavigate('product', item.id)}
+                        onClick={() => handleProductRecommendationClick(item)}
                         className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
                       >
                         <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>
@@ -429,7 +461,7 @@ export const HomePage = ({
                     recommendations.discussions.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => onNavigate('community')}
+                        onClick={() => handleDiscussionRecommendationClick(item)}
                         className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
                       >
                         <div className="text-xs text-slate-500">{item.user_name}</div>
@@ -455,7 +487,7 @@ export const HomePage = ({
                     recommendations.events.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => onNavigate('community')}
+                        onClick={() => handleEventRecommendationClick(item)}
                         className="w-full text-left rounded-xl bg-white border border-slate-200 p-3 hover:border-emerald-300 transition-colors"
                       >
                         <div className="font-medium text-slate-900 line-clamp-1">{item.title}</div>

@@ -14,6 +14,10 @@ import {
     BadgeDollarSign,
     TrendingUp,
     ThumbsUp,
+    Loader2,
+    Truck,
+    Users,
+    Sparkles,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/utils/api';
@@ -103,6 +107,32 @@ interface DashboardListing {
     interaction_rate_pct: number;
 }
 
+interface MatchedBuyer {
+    buyer_id: string;
+    buyer_name: string;
+    affinity_score: number;
+    signals: string[];
+    location: string;
+}
+
+interface LogisticsCluster {
+    cluster_id: string;
+    center_location: string;
+    buyer_count: number;
+    buyers: { buyer_id: string; buyer_name: string; location: string }[];
+    estimated_savings_pct: number;
+}
+
+interface MatchBuyersResult {
+    matched_buyers: MatchedBuyer[];
+    logistics_clusters: LogisticsCluster[];
+    summary: {
+        total_potential_buyers: number;
+        total_clusters: number;
+        avg_savings_pct: number;
+    };
+}
+
 interface ProductDetailPageProps {
     productId: string;
     user: { id: string; name: string } | null;
@@ -142,6 +172,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     const [sendingChat, setSendingChat] = useState(false);
 
     const [dashboardListings, setDashboardListings] = useState<DashboardListing[]>([]);
+    const [matchResult, setMatchResult] = useState<MatchBuyersResult | null>(null);
+    const [isMatching, setIsMatching] = useState(false);
+    const [matchError, setMatchError] = useState<string | null>(null);
+    const [matchTab, setMatchTab] = useState<'buyers' | 'clusters'>('buyers');
 
     const selectedInquiry = inquiries[0] ?? null;
     const isSellerView = Boolean(user && product?.seller_id && user.id === product.seller_id);
@@ -341,6 +375,27 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         () => dashboardListings.find((item) => item.product_id === product?.id) ?? null,
         [dashboardListings, product?.id],
     );
+
+    const handleMatchBuyers = async () => {
+        if (!product) return;
+        setIsMatching(true);
+        setMatchError(null);
+        try {
+            const res = await apiFetch(`products/${product.id}/match-buyers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const data = (await res.json()) as any;
+            if (!res.ok) throw new Error(data?.error ?? 'Không thể phân tích');
+            setMatchResult(data as MatchBuyersResult);
+        } catch (err: any) {
+            setMatchError(err?.message ?? 'Có lỗi xảy ra');
+            setMatchResult(null);
+        } finally {
+            setIsMatching(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -811,6 +866,141 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                                 <div className="text-xl font-bold text-slate-900">{productDashboard.conversion_rate_pct}%</div>
                             </div>
                         </div>
+                    </section>
+                )}
+
+                {isSellerView && (
+                    <section className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl border border-teal-200 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <Users size={18} className="text-teal-600" /> AI Ghép cặp cung-cầu & Gom đơn
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => void handleMatchBuyers()}
+                                disabled={isMatching}
+                                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60 transition-colors shadow-sm"
+                            >
+                                {isMatching ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                                Phân tích cung-cầu
+                            </button>
+                        </div>
+
+                        {matchError && <p className="text-sm text-rose-600 mb-3">{matchError}</p>}
+
+                        {matchResult && (
+                            <div className="space-y-4">
+                                {/* Summary */}
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="rounded-xl bg-white/80 border border-teal-100 p-3 text-center">
+                                        <div className="text-xs text-slate-500">Người mua tiềm năng</div>
+                                        <div className="text-2xl font-bold text-teal-700">{matchResult.summary.total_potential_buyers}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white/80 border border-teal-100 p-3 text-center">
+                                        <div className="text-xs text-slate-500">Cụm logistics</div>
+                                        <div className="text-2xl font-bold text-teal-700">{matchResult.summary.total_clusters}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white/80 border border-teal-100 p-3 text-center">
+                                        <div className="text-xs text-slate-500">Tiết kiệm vận chuyển TB</div>
+                                        <div className="text-2xl font-bold text-emerald-600">{matchResult.summary.avg_savings_pct}%</div>
+                                    </div>
+                                </div>
+
+                                {/* Tabs */}
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setMatchTab('buyers')}
+                                        className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${matchTab === 'buyers' ? 'bg-teal-600 text-white shadow' : 'bg-white text-slate-600 border border-slate-200 hover:border-teal-300'}`}
+                                    >
+                                        <Users size={13} className="inline mr-1" /> Người mua ({matchResult.matched_buyers.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMatchTab('clusters')}
+                                        className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${matchTab === 'clusters' ? 'bg-teal-600 text-white shadow' : 'bg-white text-slate-600 border border-slate-200 hover:border-teal-300'}`}
+                                    >
+                                        <Truck size={13} className="inline mr-1" /> Gom đơn ({matchResult.logistics_clusters.length})
+                                    </button>
+                                </div>
+
+                                {/* Buyers tab */}
+                                {matchTab === 'buyers' && (
+                                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                                        {matchResult.matched_buyers.length === 0 ? (
+                                            <p className="text-sm text-slate-500 text-center py-6">Chưa có dữ liệu người mua tiềm năng.</p>
+                                        ) : matchResult.matched_buyers.map((buyer) => (
+                                            <div key={buyer.buyer_id} className="rounded-xl bg-white border border-slate-200 p-3 flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                                                        {buyer.buyer_name.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-medium text-sm text-slate-900">{buyer.buyer_name}</div>
+                                                        {buyer.location && (
+                                                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                                                <MapPin size={10} /> {buyer.location}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                                            {buyer.signals.map((s, i) => (
+                                                                <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${s.includes('hỏi mua') ? 'bg-rose-100 text-rose-700' :
+                                                                        s.includes('giỏ hàng') ? 'bg-amber-100 text-amber-700' :
+                                                                            s.includes('review') ? 'bg-blue-100 text-blue-700' :
+                                                                                s.includes('khu vực') ? 'bg-emerald-100 text-emerald-700' :
+                                                                                    'bg-slate-100 text-slate-600'
+                                                                    }`}>{s}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-xs text-slate-500">Độ phù hợp</div>
+                                                    <div className="text-lg font-bold text-teal-600">{buyer.affinity_score}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Clusters tab */}
+                                {matchTab === 'clusters' && (
+                                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                                        {matchResult.logistics_clusters.length === 0 ? (
+                                            <p className="text-sm text-slate-500 text-center py-6">Chưa đủ dữ liệu để gợi ý gom đơn.</p>
+                                        ) : matchResult.logistics_clusters.map((cluster) => (
+                                            <div key={cluster.cluster_id} className="rounded-xl bg-white border border-slate-200 p-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Truck size={16} className="text-teal-600" />
+                                                        <span className="font-semibold text-sm text-slate-900">{cluster.center_location}</span>
+                                                    </div>
+                                                    {cluster.estimated_savings_pct > 0 && (
+                                                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                                                            Tiết kiệm ~{cluster.estimated_savings_pct}% vận chuyển
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-slate-600 mb-2">
+                                                    {cluster.buyer_count} người mua cùng cụm — gom đơn giúp giảm chi phí vận chuyển đáng kể
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {cluster.buyers.map((b) => (
+                                                        <span key={b.buyer_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-medium">
+                                                            <User size={10} /> {b.buyer_name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {!matchResult && !matchError && !isMatching && (
+                            <p className="text-sm text-slate-500">Bấm "Phân tích cung-cầu" để AI tìm người mua phù hợp và gợi ý gom đơn logistics.</p>
+                        )}
                     </section>
                 )}
             </div>

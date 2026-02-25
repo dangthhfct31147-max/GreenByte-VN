@@ -5,6 +5,9 @@ import { optionalAuth, requireAuth, type AuthenticatedRequest } from '../middlew
 import { cacheGet, cacheSet, cacheDelete, CACHE_KEYS, CACHE_TTL } from '../cache';
 import { classifyByproductFromImage } from '../lib/byproductVision';
 import { generateSellerAssistantGuidance } from '../lib/sellerAssistant';
+import { generatePriceSuggestion } from '../lib/priceSuggestion';
+import { matchBuyersForProduct } from '../lib/supplyDemandMatcher';
+import { trackAiUsageEvent } from '../lib/aiLearning';
 
 export const productsRouter = Router();
 
@@ -298,6 +301,18 @@ productsRouter.post('/classify-image', requireAuth, async (req: AuthenticatedReq
             description: body.description,
         });
 
+        void trackAiUsageEvent({
+            module: 'VISION_CLASSIFIER',
+            eventType: 'REQUEST',
+            userId: req.user?.id,
+            metadata: {
+                provider: result.provider,
+                model: result.model,
+                category: result.suggestion?.category,
+                confidence: result.suggestion?.confidence,
+            },
+        });
+
         return res.json({
             suggestion: result.suggestion,
             provider: result.provider,
@@ -318,11 +333,113 @@ productsRouter.post('/seller-assistant', requireAuth, async (req: AuthenticatedR
             conversation: body.conversation,
         });
 
+        void trackAiUsageEvent({
+            module: 'SELLER_ASSISTANT',
+            eventType: 'REQUEST',
+            userId: req.user?.id,
+            category: body.draft?.category,
+            location: body.draft?.location,
+            metadata: {
+                provider: result.provider,
+                model: result.model,
+                missing_fields: result.guidance.missing_fields.length,
+                warnings: result.guidance.warnings.length,
+            },
+        });
+
         return res.json({
             guidance: result.guidance,
             provider: result.provider,
             model: result.model,
         });
+    } catch (err) {
+        return next(err);
+    }
+});
+
+const PriceSuggestionSchema = z.object({
+    category: z.string().min(1).max(50),
+    location: z.string().max(120).optional(),
+    quality_score: z.number().int().min(1).max(5).optional(),
+    unit: z.string().max(30).optional(),
+});
+
+productsRouter.post('/price-suggestion', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const body = PriceSuggestionSchema.parse(req.body);
+
+        const result = await generatePriceSuggestion({
+            category: body.category,
+            location: body.location,
+            quality_score: body.quality_score,
+            unit: body.unit,
+        });
+
+        void trackAiUsageEvent({
+            module: 'PRICE_SUGGESTION',
+            eventType: 'REQUEST',
+            userId: req.user?.id,
+            category: body.category,
+            location: body.location,
+            metadata: {
+                provider: result.provider,
+                model: result.model,
+                confidence: result.suggestion.confidence,
+                sample_count: result.suggestion.sample_count,
+            },
+        });
+
+        return res.json({
+            suggestion: result.suggestion,
+            provider: result.provider,
+            model: result.model,
+        });
+    } catch (err) {
+        return next(err);
+    }
+});
+
+const MatchBuyersSchema = z.object({
+    take: z.number().int().min(1).max(30).optional(),
+});
+
+productsRouter.post('/:id/match-buyers', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const userId = req.user!.id;
+        const params = z.object({ id: z.string().uuid() }).parse(req.params);
+        const body = MatchBuyersSchema.parse(req.body ?? {});
+
+        const product = await (prisma.product as any).findFirst({
+            where: { id: params.id, sellerId: userId, deletedAt: null },
+            select: { id: true, category: true, location: true, sellerId: true },
+        });
+
+        if (!product) {
+            return res.status(404).json({ error: 'Không tìm thấy sản phẩm hoặc bạn không phải người bán' });
+        }
+
+        const result = await matchBuyersForProduct(
+            product.id,
+            product.sellerId,
+            product.category,
+            product.location,
+            body.take ?? 15,
+        );
+
+        void trackAiUsageEvent({
+            module: 'MATCH_BUYERS',
+            eventType: 'REQUEST',
+            userId,
+            productId: product.id,
+            category: product.category,
+            location: product.location,
+            metadata: {
+                total_potential_buyers: result.summary.total_potential_buyers,
+                total_clusters: result.summary.total_clusters,
+            },
+        });
+
+        return res.json(result);
     } catch (err) {
         return next(err);
     }
@@ -669,6 +786,14 @@ productsRouter.post('/:id/reviews', requireAuth, async (req: AuthenticatedReques
             include: { reviewer: { select: { id: true, name: true } } },
         });
 
+        void trackAiUsageEvent({
+            module: 'RECOMMENDATIONS',
+            eventType: body.rating >= 4 ? 'REVIEW_POSITIVE' : 'REVIEW_NEGATIVE',
+            userId: reviewerId,
+            productId,
+            metadata: { rating: body.rating },
+        });
+
         await cacheDelete(CACHE_KEYS.productsInvalidate);
 
         return res.status(201).json({
@@ -757,6 +882,18 @@ productsRouter.post('/:id/inquiries', requireAuth, async (req: AuthenticatedRequ
             });
 
             return updated;
+        });
+
+        void trackAiUsageEvent({
+            module: 'RECOMMENDATIONS',
+            eventType: 'INQUIRY_OPEN',
+            userId: buyerId,
+            productId,
+            inquiryId: inquiry.id,
+            metadata: {
+                has_offer: typeof body.proposed_price_vnd === 'number',
+                proposed_price_vnd: body.proposed_price_vnd,
+            },
         });
 
         return res.status(201).json({
@@ -927,6 +1064,27 @@ productsRouter.patch('/inquiries/:inquiryId/status', requireAuth, async (req: Au
             },
         });
 
+        if (body.status === 'ACCEPTED' || body.status === 'REJECTED') {
+            const inquiryWithContext = await (prisma as any).productInquiry.findUnique({
+                where: { id: inquiryId },
+                select: {
+                    buyerId: true,
+                    productId: true,
+                    product: { select: { category: true, location: true } },
+                },
+            });
+
+            void trackAiUsageEvent({
+                module: 'RECOMMENDATIONS',
+                eventType: body.status === 'ACCEPTED' ? 'INQUIRY_ACCEPTED' : 'INQUIRY_REJECTED',
+                userId: inquiryWithContext?.buyerId ?? null,
+                productId: inquiryWithContext?.productId ?? null,
+                inquiryId,
+                category: inquiryWithContext?.product?.category ?? null,
+                location: inquiryWithContext?.product?.location ?? null,
+            });
+        }
+
         return res.json({
             inquiry: {
                 id: updated.id,
@@ -1037,6 +1195,17 @@ productsRouter.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res, 
                 },
             })
             .catch(() => undefined);
+
+        if (req.user?.id) {
+            void trackAiUsageEvent({
+                module: 'RECOMMENDATIONS',
+                eventType: 'VIEW',
+                userId: req.user.id,
+                productId: product.id,
+                category: product.category,
+                location: product.location,
+            });
+        }
 
         return res.json(response);
     } catch (err) {

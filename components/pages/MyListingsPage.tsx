@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Eye, Filter, Leaf, Loader2, MapPin, Package, Pencil, RefreshCw, RotateCcw, Save, Search, ShoppingBag, Star, Tag, Trash2, TrendingUp, X, XCircle } from 'lucide-react';
-import { apiFetch } from '@/utils/api';
+import { ArrowLeft, Check, CheckCircle2, Eye, Filter, Leaf, Loader2, MapPin, Package, Pencil, RefreshCw, RotateCcw, Save, Search, ShoppingBag, Sparkles, Star, Tag, Trash2, TrendingUp, X, XCircle } from 'lucide-react';
+import { apiFetch, sendAiFeedback } from '@/utils/api';
 import Pagination from '../ui/Pagination';
 import { AppSelect } from '../ui/AppSelect';
 
@@ -30,6 +30,16 @@ type ListingFormState = {
     description: string;
 };
 
+type PriceSuggestion = {
+    min_price: number;
+    max_price: number;
+    median_price: number;
+    suggested_range: [number, number];
+    factors: string[];
+    sample_count: number;
+    confidence: 'high' | 'medium' | 'low';
+};
+
 interface MyListingsPageProps {
     onBack: () => void;
     onViewProduct: (productId: string) => void;
@@ -56,6 +66,9 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
     const [saving, setSaving] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [form, setForm] = useState<ListingFormState | null>(null);
+    const [priceSuggestion, setPriceSuggestion] = useState<PriceSuggestion | null>(null);
+    const [isPriceSuggesting, setIsPriceSuggesting] = useState(false);
+    const [priceSuggestionError, setPriceSuggestionError] = useState<string | null>(null);
     const [totalViews, setTotalViews] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('Tất cả');
@@ -159,11 +172,63 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
         setForm(toFormState(item));
         setError(null);
         setSuccess(null);
+        setPriceSuggestion(null);
+        setPriceSuggestionError(null);
     };
 
     const cancelEdit = () => {
         setEditingId(null);
         setForm(null);
+        setPriceSuggestion(null);
+        setPriceSuggestionError(null);
+    };
+
+    const handlePriceSuggestion = async () => {
+        if (!form) return;
+        const category = form.category.trim();
+        if (!category) {
+            setPriceSuggestionError('Vui lòng nhập danh mục trước khi gợi ý giá.');
+            return;
+        }
+        setIsPriceSuggesting(true);
+        setPriceSuggestionError(null);
+        try {
+            const res = await apiFetch('products/price-suggestion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category,
+                    location: form.location.trim() || undefined,
+                    quality_score: Number(form.quality_score) || undefined,
+                    unit: form.unit.trim() || undefined,
+                }),
+            });
+            const data = (await res.json()) as any;
+            if (!res.ok) throw new Error(data?.error ?? 'Không thể gợi ý giá');
+            setPriceSuggestion(data?.suggestion as PriceSuggestion);
+        } catch (err: any) {
+            setPriceSuggestionError(err?.message ?? 'AI gợi ý giá tạm thời bận.');
+            setPriceSuggestion(null);
+        } finally {
+            setIsPriceSuggesting(false);
+        }
+    };
+
+    const applyPriceSuggestion = () => {
+        if (!priceSuggestion) return;
+        setForm((p) => p ? { ...p, price: String(priceSuggestion.median_price) } : p);
+        if (form) {
+            sendAiFeedback({
+                module: 'PRICE_SUGGESTION',
+                event_type: 'APPLY',
+                category: form.category.trim() || undefined,
+                location: form.location.trim() || undefined,
+                metadata: {
+                    suggested_price: priceSuggestion.median_price,
+                    confidence: priceSuggestion.confidence,
+                },
+            });
+        }
     };
 
     const saveEdit = async () => {
@@ -430,7 +495,43 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({ onBack, onViewPr
                                                             <div className="grid grid-cols-2 gap-3">
                                                                 <div>
                                                                     <label className="block text-xs font-medium text-slate-500 mb-1">Giá (VNĐ) <span className="text-red-400">*</span></label>
-                                                                    <input value={form.price} onChange={(e) => setForm((p) => p ? { ...p, price: e.target.value } : p)} className={inputCls} placeholder="VD: 500000" type="number" min="0" />
+                                                                    <input value={form.price} onChange={(e) => { setForm((p) => p ? { ...p, price: e.target.value } : p); setPriceSuggestion(null); }} className={inputCls} placeholder="VD: 500000" type="number" min="0" />
+                                                                    <button type="button" onClick={() => void handlePriceSuggestion()} disabled={isPriceSuggesting} className="mt-1 inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:border-violet-300 hover:bg-violet-100 disabled:opacity-60 transition-colors">
+                                                                        {isPriceSuggesting ? <Loader2 size={11} className="animate-spin" /> : <TrendingUp size={11} />} AI gợi ý giá
+                                                                    </button>
+                                                                    {priceSuggestionError && <p className="mt-0.5 text-[11px] text-rose-600">{priceSuggestionError}</p>}
+                                                                    {priceSuggestion && (
+                                                                        <div className="mt-1.5 rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50/50 p-2.5 text-[11px] text-slate-700 space-y-1.5">
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="font-semibold text-violet-800 flex items-center gap-1"><TrendingUp size={11} /> Gợi ý giá tham chiếu</span>
+                                                                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${priceSuggestion.confidence === 'high' ? 'bg-emerald-100 text-emerald-700' : priceSuggestion.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                                                    {priceSuggestion.confidence === 'high' ? 'Tin cậy cao' : priceSuggestion.confidence === 'medium' ? 'Tin cậy TB' : 'Ít dữ liệu'}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-3 gap-1.5 text-center">
+                                                                                <div className="rounded bg-white/80 border border-violet-100 p-1.5">
+                                                                                    <div className="text-[9px] text-slate-500 uppercase">Thấp</div>
+                                                                                    <div className="font-bold text-slate-800 text-xs">{priceSuggestion.suggested_range[0].toLocaleString('vi-VN')}₫</div>
+                                                                                </div>
+                                                                                <div className="rounded bg-violet-100/60 border border-violet-200 p-1.5 ring-1 ring-violet-300/30">
+                                                                                    <div className="text-[9px] text-violet-600 uppercase font-semibold">Đề xuất</div>
+                                                                                    <div className="font-bold text-violet-800 text-xs">{priceSuggestion.median_price.toLocaleString('vi-VN')}₫</div>
+                                                                                </div>
+                                                                                <div className="rounded bg-white/80 border border-violet-100 p-1.5">
+                                                                                    <div className="text-[9px] text-slate-500 uppercase">Cao</div>
+                                                                                    <div className="font-bold text-slate-800 text-xs">{priceSuggestion.suggested_range[1].toLocaleString('vi-VN')}₫</div>
+                                                                                </div>
+                                                                            </div>
+                                                                            {priceSuggestion.factors.length > 0 && (
+                                                                                <ul className="list-disc pl-3.5 space-y-0.5 text-slate-600 text-[10px]">
+                                                                                    {priceSuggestion.factors.map((f, i) => <li key={i}>{f}</li>)}
+                                                                                </ul>
+                                                                            )}
+                                                                            <button type="button" onClick={applyPriceSuggestion} className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1 text-white text-[11px] font-medium hover:bg-violet-700 transition-colors shadow-sm">
+                                                                                <Check size={11} /> Áp dụng giá đề xuất
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-xs font-medium text-slate-500 mb-1">Chất lượng (1–5) <span className="text-red-400">*</span></label>

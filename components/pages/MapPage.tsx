@@ -61,6 +61,58 @@ interface GreenIndexStats {
   redCount: number;
 }
 
+type HotspotPriority = 'critical' | 'high' | 'medium';
+
+interface TradeOpportunityProduct {
+  id: string;
+  title: string;
+  category: string;
+  location: string;
+  price: number;
+  quality_score: number;
+  image: string;
+  distance_km: number | null;
+  match_reason: string;
+}
+
+interface PollutionOpportunity {
+  hotspot_id: string;
+  center: { lat: number; lng: number };
+  radius_km: number;
+  priority: HotspotPriority;
+  anomaly_score: number;
+  confidence: 'high' | 'medium' | 'low';
+  drivers: string[];
+  community: {
+    report_count: number;
+    avg_severity: number;
+    latest_report_at: string;
+    report_types: PollutionType[];
+  };
+  external_signal: {
+    source: string;
+    station_name?: string;
+    distance_km?: number;
+    risk_score: number;
+    observed_at?: string;
+    metrics: Record<string, number>;
+  } | null;
+  recommended_categories: string[];
+  suggested_interventions: string[];
+  tradable_products: TradeOpportunityProduct[];
+}
+
+interface PollutionOpportunitiesPayload {
+  generated_at: string;
+  source: {
+    community_reports: number;
+    external_stations: number;
+    external_provider: string;
+    external_status: 'used' | 'unavailable';
+  };
+  opportunities: PollutionOpportunity[];
+}
+
 const GREEN_INDEX_GEOJSON_URLS = [
   '/vietnam-provinces.geojson',
   'https://code.highcharts.com/mapdata/countries/vn/vn-all.geo.json',
@@ -231,12 +283,31 @@ const FLY_DURATION_CLASS: Record<number, string> = {
   2: 'fly-duration-200',
 };
 
+const PRIORITY_THEME: Record<HotspotPriority, { color: string; chipClass: string; label: string }> = {
+  critical: {
+    color: '#dc2626',
+    chipClass: 'bg-red-100 text-red-700',
+    label: 'Khẩn cấp',
+  },
+  high: {
+    color: '#ea580c',
+    chipClass: 'bg-orange-100 text-orange-700',
+    label: 'Cao',
+  },
+  medium: {
+    color: '#d97706',
+    chipClass: 'bg-amber-100 text-amber-700',
+    label: 'Trung bình',
+  },
+};
+
 interface MapPageProps {
   user: { id: string; name: string } | null;
   onLoginRequest: () => void;
+  onViewProduct: (productId: string) => void;
 }
 
-export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
+export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest, onViewProduct }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
@@ -251,6 +322,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const overpassCooldownUntilRef = useRef<number>(0);
   const flyMoveEndHandlerRef = useRef<(() => void) | null>(null);
   const greenIndexLayerRef = useRef<L.GeoJSON | null>(null);
+  const hotspotLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [markers, setMarkers] = useState<PollutionMarker[]>([]);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -269,6 +341,10 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const [showGreenLegend, setShowGreenLegend] = useState(true);
   const [showGreenRanking, setShowGreenRanking] = useState(false);
   const [selectedProvince, setSelectedProvince] = useState<ProvinceData | null>(null);
+  const [opportunities, setOpportunities] = useState<PollutionOpportunity[]>([]);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<PollutionOpportunity | null>(null);
+  const [opportunitiesGeneratedAt, setOpportunitiesGeneratedAt] = useState<string | null>(null);
+  const [opportunitiesSource, setOpportunitiesSource] = useState<PollutionOpportunitiesPayload['source'] | null>(null);
 
   // POI State
   const [showPOI, setShowPOI] = useState(false);
@@ -295,25 +371,55 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
 
-  // Real-time Polling
+  const loadRealtimePollutionData = useCallback(async () => {
+    try {
+      const [pollutionRes, opportunitiesRes] = await Promise.all([
+        apiFetch('pollution'),
+        apiFetch('pollution/opportunities?take=8&products_per_opportunity=5&include_external=true'),
+      ]);
+
+      if (pollutionRes.ok) {
+        const pollutionData = await pollutionRes.json();
+        if (Array.isArray(pollutionData?.markers)) {
+          setMarkers((prev) => {
+            if (JSON.stringify(prev) === JSON.stringify(pollutionData.markers)) return prev;
+            return pollutionData.markers;
+          });
+        }
+      }
+
+      if (opportunitiesRes.ok) {
+        const opportunitiesData = (await opportunitiesRes.json()) as PollutionOpportunitiesPayload;
+        const nextOpportunities = Array.isArray(opportunitiesData?.opportunities) ? opportunitiesData.opportunities : [];
+
+        setOpportunities((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(nextOpportunities)) return prev;
+          return nextOpportunities;
+        });
+        setOpportunitiesGeneratedAt(opportunitiesData?.generated_at ?? null);
+        setOpportunitiesSource(opportunitiesData?.source ?? null);
+
+        setSelectedOpportunity((current) => {
+          if (!current) return current;
+          const updated = nextOpportunities.find((item) => item.hotspot_id === current.hotspot_id);
+          return updated ?? null;
+        });
+      }
+    } catch {
+      // Ignore transient polling errors
+    }
+  }, []);
+
+  // Real-time polling for markers and anomaly hotspots
   useEffect(() => {
+    loadRealtimePollutionData();
+
     const interval = setInterval(() => {
-      apiFetch('pollution')
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data?.markers)) {
-            setMarkers(prev => {
-              // Simple JSON stringify comparison to avoid flicker
-              if (JSON.stringify(prev) === JSON.stringify(data.markers)) return prev;
-              return data.markers;
-            });
-          }
-        })
-        .catch(console.error);
-    }, 15000); // 15 seconds
+      loadRealtimePollutionData();
+    }, 15000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [loadRealtimePollutionData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +456,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       setAddingMode(false);
       setTempMarkerPos(null);
       setSelectedMarker(null);
+      setSelectedOpportunity(null);
       setShowPOI(false);
       return;
     }
@@ -517,27 +624,6 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     setSearchResults([]);
     setSearchQuery(result.display_name.split(',')[0]);
   };
-
-
-  // Load markers from backend
-  useEffect(() => {
-    const controller = new AbortController();
-
-    apiFetch('pollution', { signal: controller.signal })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return (await r.json()) as any;
-      })
-      .then((data) => {
-        if (Array.isArray(data?.markers)) setMarkers(data.markers);
-      })
-      .catch(() => {
-        setMarkers([]);
-      });
-
-    return () => controller.abort();
-  }, []);
-
   // --- Map Initialization ---
   useEffect(() => {
     if (mapRef.current) return;
@@ -589,6 +675,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       userLocLayerRef.current = L.layerGroup().addTo(map);
       highlightLayerRef.current = L.layerGroup().addTo(map);
       poiLayerRef.current = L.layerGroup().addTo(map);
+      hotspotLayerRef.current = L.layerGroup().addTo(map);
 
       // Ensure correct initial sizing (helps when the map mounts inside dynamic layouts)
       setTimeout(() => {
@@ -1027,6 +1114,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
         setTempMarkerPos({ lat: e.latlng.lat, lng: e.latlng.lng });
       } else {
         setSelectedMarker(null);
+        setSelectedOpportunity(null);
       }
     };
 
@@ -1070,6 +1158,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       m.on('click', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e);
         setSelectedMarker(marker);
+        setSelectedOpportunity(null);
         smoothFlyTo(marker.lat, marker.lng);
       });
 
@@ -1077,6 +1166,70 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     });
 
   }, [markers, isGreenIndexMode]);
+
+  // --- Render anomaly hotspots ---
+  useEffect(() => {
+    if (!mapRef.current || !hotspotLayerRef.current) return;
+
+    hotspotLayerRef.current.clearLayers();
+    if (isGreenIndexMode || opportunities.length === 0) return;
+
+    opportunities.forEach((opportunity) => {
+      const priorityTheme = PRIORITY_THEME[opportunity.priority];
+      const intensity = Math.min(1, Math.max(0.25, opportunity.anomaly_score / 20));
+      const radiusMeters = Math.max(2200, Math.min(16000, opportunity.radius_km * 1000));
+
+      const impactRing = L.circle([opportunity.center.lat, opportunity.center.lng], {
+        radius: radiusMeters,
+        color: priorityTheme.color,
+        weight: 2,
+        opacity: 0.65,
+        fillColor: priorityTheme.color,
+        fillOpacity: 0.08 + intensity * 0.12,
+      });
+
+      impactRing.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        setSelectedOpportunity(opportunity);
+        setSelectedMarker(null);
+        smoothFlyTo(opportunity.center.lat, opportunity.center.lng);
+      });
+      impactRing.addTo(hotspotLayerRef.current!);
+
+      const iconHtml = `
+        <div class="hotspot-dot" style="--hotspot-color:${priorityTheme.color}; --hotspot-size:${Math.round(22 + intensity * 10)}px;">
+          <span class="hotspot-core"></span>
+          <span class="hotspot-score">${opportunity.anomaly_score.toFixed(1)}</span>
+        </div>
+      `;
+
+      const hotspotIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: iconHtml,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+      });
+
+      const centerMarker = L.marker([opportunity.center.lat, opportunity.center.lng], {
+        icon: hotspotIcon,
+        zIndexOffset: 500,
+      });
+
+      centerMarker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        setSelectedOpportunity(opportunity);
+        setSelectedMarker(null);
+        smoothFlyTo(opportunity.center.lat, opportunity.center.lng);
+      });
+
+      centerMarker.bindTooltip(
+        `<div style="font-size:12px"><b>Điểm nóng ${priorityTheme.label}</b><br/>Anomaly score: ${opportunity.anomaly_score.toFixed(1)}<br/>Báo cáo cộng đồng: ${opportunity.community.report_count}</div>`,
+        { direction: 'top', offset: [0, -12] },
+      );
+
+      centerMarker.addTo(hotspotLayerRef.current!);
+    });
+  }, [opportunities, isGreenIndexMode, smoothFlyTo]);
 
   // --- Render Temp Marker ---
   useEffect(() => {
@@ -1103,6 +1256,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
     if (!user) { onLoginRequest(); return; }
     setAddingMode(true);
     setSelectedMarker(null);
+    setSelectedOpportunity(null);
   };
 
   const handleConfirmAdd = async () => {
@@ -1185,6 +1339,7 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
 
     const targetMarker = markers[nextIndex];
     setSelectedMarker(targetMarker);
+    setSelectedOpportunity(null);
     smoothFlyTo(targetMarker.lat, targetMarker.lng);
   }, [markers, selectedMarker, isFlying, smoothFlyTo]);
 
@@ -1234,6 +1389,41 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
         .leaflet-tooltip-top:before, .leaflet-tooltip-bottom:before,
         .leaflet-tooltip-left:before, .leaflet-tooltip-right:before {
           border: none !important;
+        }
+        .hotspot-dot {
+          position: relative;
+          width: var(--hotspot-size, 26px);
+          height: var(--hotspot-size, 26px);
+          display: grid;
+          place-items: center;
+          border-radius: 9999px;
+          background: color-mix(in srgb, var(--hotspot-color) 24%, white);
+          box-shadow: 0 0 0 2px #fff, 0 6px 20px rgba(2, 6, 23, 0.35);
+          animation: hotspot-pulse 1.8s ease-out infinite;
+        }
+        .hotspot-core {
+          width: calc(var(--hotspot-size, 26px) * 0.54);
+          height: calc(var(--hotspot-size, 26px) * 0.54);
+          border-radius: 9999px;
+          background: var(--hotspot-color);
+        }
+        .hotspot-score {
+          position: absolute;
+          top: -8px;
+          right: -10px;
+          background: #0f172a;
+          color: white;
+          font-size: 9px;
+          font-weight: 700;
+          line-height: 1;
+          padding: 3px 5px;
+          border-radius: 9999px;
+          border: 1px solid rgba(255,255,255,0.25);
+        }
+        @keyframes hotspot-pulse {
+          0% { box-shadow: 0 0 0 2px #fff, 0 0 0 0 color-mix(in srgb, var(--hotspot-color) 40%, transparent); }
+          70% { box-shadow: 0 0 0 2px #fff, 0 0 0 12px transparent; }
+          100% { box-shadow: 0 0 0 2px #fff, 0 0 0 0 transparent; }
         }
       `}</style>
 
@@ -1308,6 +1498,42 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
             </button>
           </div>
         </div>}
+
+        {!isGreenIndexMode && opportunities.length > 0 && (
+          <div className="absolute top-24 right-4 z-[410] w-[250px] rounded-xl border border-red-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Điểm nóng ưu tiên</h3>
+              <span className="text-[10px] text-slate-500">Live</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Mức ưu tiên</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY_THEME[opportunities[0].priority].chipClass}`}>
+                  {PRIORITY_THEME[opportunities[0].priority].label}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-slate-500">Anomaly score</span>
+                <span className="font-bold text-red-600">{opportunities[0].anomaly_score.toFixed(1)}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedOpportunity(opportunities[0]);
+                  setSelectedMarker(null);
+                  smoothFlyTo(opportunities[0].center.lat, opportunities[0].center.lng);
+                }}
+                className="mt-2 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Tập trung vào điểm nóng nhất
+              </button>
+              {opportunitiesGeneratedAt && (
+                <div className="mt-2 text-[10px] text-slate-400">
+                  Cập nhật: {new Date(opportunitiesGeneratedAt).toLocaleTimeString('vi-VN')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Layer Toggle Buttons (Satellite/Streets + POI) */}
         <div className="absolute bottom-40 right-4 z-[400] sm:bottom-24 sm:right-14 flex flex-col gap-2">
@@ -1456,6 +1682,15 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
                 <div className="flex-1 bg-orange-500" />
                 <div className="flex-1 bg-red-500" />
               </div>
+              {opportunitiesSource && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+                  <div className="font-semibold text-slate-700">Anomaly feed</div>
+                  <div>Báo cáo cộng đồng: {opportunitiesSource.community_reports}</div>
+                  <div>
+                    Nguồn môi trường: {opportunitiesSource.external_provider} ({opportunitiesSource.external_status === 'used' ? 'đang dùng' : 'chưa có'})
+                  </div>
+                </div>
+              )}
             </div>}
             {isGreenIndexMode && <div className="mt-4 space-y-2 text-xs text-slate-600">
               <div className="flex items-center justify-between">
@@ -1675,6 +1910,90 @@ export const MapPage: React.FC<MapPageProps> = ({ user, onLoginRequest }) => {
       </AnimatePresence>
 
       <AnimatePresence>
+        {selectedOpportunity && !addingMode && !isGreenIndexMode && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            className="absolute top-0 right-0 h-full w-full md:w-[420px] bg-white shadow-2xl z-[505] border-l border-slate-200 flex flex-col"
+          >
+            <div className="p-4 border-b border-slate-100 flex justify-between items-start">
+              <div>
+                <h3 className="font-bold text-slate-900">Điểm nóng ưu tiên</h3>
+                <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                  <span className={`rounded-full px-2 py-0.5 font-semibold ${PRIORITY_THEME[selectedOpportunity.priority].chipClass}`}>
+                    {PRIORITY_THEME[selectedOpportunity.priority].label}
+                  </span>
+                  <span>Score {selectedOpportunity.anomaly_score.toFixed(1)}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedOpportunity(null)}
+                className="p-1 hover:bg-slate-100 rounded-full"
+                aria-label="Đóng"
+                title="Đóng"
+              >
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto space-y-5">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Nguyên nhân chính</h4>
+                <ul className="space-y-2">
+                  {selectedOpportunity.drivers.slice(0, 4).map((driver, idx) => (
+                    <li key={idx} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-sm text-slate-600">{driver}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-slate-200 p-2">
+                  <div className="text-[11px] text-slate-500">Báo cáo cộng đồng</div>
+                  <div className="text-lg font-bold text-slate-800">{selectedOpportunity.community.report_count}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-2">
+                  <div className="text-[11px] text-slate-500">Mức nghiêm trọng TB</div>
+                  <div className="text-lg font-bold text-slate-800">{selectedOpportunity.community.avg_severity.toFixed(1)}/5</div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Can thiệp đề xuất</h4>
+                <ul className="space-y-2 text-sm text-slate-600">
+                  {selectedOpportunity.suggested_interventions.slice(0, 3).map((hint, idx) => (
+                    <li key={idx} className="rounded-lg border border-slate-100 bg-slate-50 p-2">• {hint}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 mb-2">Cơ hội giao dịch gần điểm nóng</h4>
+                {selectedOpportunity.tradable_products.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedOpportunity.tradable_products.slice(0, 5).map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onViewProduct(item.id)}
+                        className="w-full rounded-lg border border-slate-200 p-2 text-left transition-colors hover:bg-slate-50"
+                      >
+                        <div className="text-sm font-semibold text-slate-800 line-clamp-1">{item.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{item.category} • {item.location}</div>
+                        <div className="mt-1 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-emerald-700">{new Intl.NumberFormat('vi-VN').format(item.price)}₫</span>
+                          <span className="text-slate-500">{typeof item.distance_km === 'number' ? `${item.distance_km.toFixed(1)} km` : 'N/A'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-500">Chưa có sản phẩm phù hợp gần khu vực này.</div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {selectedMarker && !addingMode && !isGreenIndexMode && (
           <motion.div
             initial={{ x: "100%" }}
