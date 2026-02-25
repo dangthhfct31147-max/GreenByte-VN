@@ -32,6 +32,7 @@ dotenv.config();
 
 const env = getEnv();
 const isProd = env.NODE_ENV === 'production';
+const shouldServeFrontend = env.SERVE_FRONTEND;
 const allowedOrigins = new Set(getAllowedOrigins(env));
 
 const app = express();
@@ -201,10 +202,10 @@ app.use('/api/admin', adminRouter);
 app.use('/api/blockchain', blockchainRouter);
 app.use('/api/green-index', greenIndexRouter);
 
-// Serve static frontend in production
-if (isProd) {
+// Serve static frontend only when explicitly enabled
+if (shouldServeFrontend) {
     const distPath = path.join(__dirname, '../../dist');
-    console.log('Production mode detected.');
+    console.log('Frontend static serving is enabled (SERVE_FRONTEND=true).');
     console.log('Serving static files from:', distPath);
     console.log('Current directory (__dirname):', __dirname);
 
@@ -221,7 +222,7 @@ if (isProd) {
         res.sendFile('index.html', { root: distPath });
     });
 } else {
-    console.log('Production mode NOT detected. NODE_ENV:', env.NODE_ENV);
+    console.log('Frontend static serving is disabled (SERVE_FRONTEND=false). API-only mode.');
 }
 
 app.use(notFound);

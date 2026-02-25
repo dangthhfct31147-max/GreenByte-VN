@@ -19,6 +19,7 @@ Vào tab **Variables** và set các giá trị sau:
 | Variable | Giá trị mẫu | Mô tả |
 |----------|-------------|-------|
 | `NODE_ENV` | `production` | Bắt buộc |
+| `SERVE_FRONTEND` | `false` | `false` cho Backend-only, `true` cho all-in-one |
 | `DATABASE_URL` | `postgresql://...?schema=eco` | Connection string (phải có `?schema=eco`) |
 | `JWT_SECRET` | `openssl rand -hex 48` | Chuỗi ngẫu nhiên ≥32 ký tự |
 | `FRONTEND_ORIGIN` | `https://greenbyte.up.railway.app` | Domain public của app |
@@ -50,6 +51,7 @@ Vào tab **Variables** và set các giá trị sau:
 1. Tạo Service mới: **New** -> **GitHub Repo** -> Chọn `GreenByte`.
 2. Vào **Settings** -> **Build** -> **Dockerfile Path** -> Nhập `Dockerfile.backend`.
 3. Vào **Variables**: Thêm các biến như hướng dẫn ở bước 2.
+   - Đảm bảo `SERVE_FRONTEND=false` (backend chỉ phục vụ API).
 4. Đợi build xong, vào **Settings** -> **Networking** -> **Generate Domain**.
 
 ### Bước 4.2: Deploy Frontend Service
@@ -62,7 +64,7 @@ Vào tab **Variables** và set các giá trị sau:
 ### Deploy All-in-One (Alternative)
 Nếu muốn deploy 1 service duy nhất (backend phục vụ cả frontend):
 1. Dùng `Dockerfile` (không phải `Dockerfile.backend` hay `Dockerfile.frontend`).
-2. Set tất cả biến cần thiết.
+2. Set tất cả biến cần thiết và đặt `SERVE_FRONTEND=true`.
 3. Frontend và API cùng chạy trên 1 domain.
 
 ## 🔒 Security Features (Tự động)

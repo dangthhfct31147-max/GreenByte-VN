@@ -41,9 +41,22 @@ function resolveFrontendOrigin(): string {
     );
 }
 
+function parseBooleanEnv(raw: unknown, defaultValue = false): boolean {
+    if (typeof raw === 'boolean') return raw;
+    if (typeof raw !== 'string') return defaultValue;
+
+    const value = raw.trim().toLowerCase();
+    if (!value) return defaultValue;
+
+    if (['1', 'true', 'yes', 'y', 'on'].includes(value)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(value)) return false;
+    return defaultValue;
+}
+
 const EnvSchema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+    SERVE_FRONTEND: z.preprocess((value) => parseBooleanEnv(value, false), z.boolean()),
     DATABASE_URL: z
         .string()
         .min(1)
@@ -87,6 +100,7 @@ export function getEnv(): Env {
     const parsed = EnvSchema.safeParse({
         NODE_ENV: process.env.NODE_ENV,
         PORT: process.env.PORT,
+        SERVE_FRONTEND: process.env.SERVE_FRONTEND,
         DATABASE_URL: process.env.DATABASE_URL,
         FRONTEND_ORIGIN: resolveFrontendOrigin(),
         JWT_SECRET: process.env.JWT_SECRET,
