@@ -91,6 +91,7 @@ type PriceSuggestion = {
 const CATEGORIES = ['Tất cả', 'Rơm rạ', 'Vỏ trấu', 'Phân bón', 'Bã mía', 'Gỗ & Mùn cưa', 'Khác'];
 const DEFAULT_PRODUCT_IMAGE = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%22800%22 viewBox=%220 0 1200 800%22%3E%3Crect width=%221200%22 height=%22800%22 fill=%22%23e2e8f0%22/%3E%3Cg fill=%22%2394a3b8%22%3E%3Ccircle cx=%22600%22 cy=%22310%22 r=%2260%22/%3E%3Cpath d=%22M430 520c40-78 104-118 170-118s130 40 170 118z%22/%3E%3C/g%3E%3Ctext x=%22600%22 y=%22620%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2236%22 fill=%2264748b%22%3EAnh san pham%3C/text%3E%3C/svg%3E';
 const AUTO_REFRESH_PREF_KEY_PREFIX = 'greenbyte:seller-assistant:auto-refresh:';
+const EMPTY_STATE_LOADING_TIMEOUT_MS = 30_000;
 
 const DEFAULT_CREATE_FORM = {
   title: '',
@@ -127,7 +128,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
   const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'quality_desc' | 'distance_asc'>('newest');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isLoadingRemote, setIsLoadingRemote] = useState(false);
+  const [isLoadingRemote, setIsLoadingRemote] = useState(true);
+  const [hasEmptyStateLoadTimedOut, setHasEmptyStateLoadTimedOut] = useState(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -202,6 +204,22 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
     }
     return products;
   }, [maxDistanceKm, products, userLocation]);
+
+  useEffect(() => {
+    if (!isLoadingRemote || filteredProducts.length > 0) {
+      setHasEmptyStateLoadTimedOut(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHasEmptyStateLoadTimedOut(true);
+    }, EMPTY_STATE_LOADING_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [filteredProducts.length, isLoadingRemote]);
+
+  const showLoadingPlaceholder = isLoadingRemote && filteredProducts.length === 0 && !hasEmptyStateLoadTimedOut;
+  const showEmptyState = filteredProducts.length === 0 && !showLoadingPlaceholder;
 
   // Pagination Logic
   const totalPages = useMemo(() => Math.ceil(filteredProducts.length / ITEMS_PER_PAGE), [filteredProducts.length]);
@@ -415,7 +433,11 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
             {selectedCategory === 'Tất cả' ? 'Tin đăng mới nhất' : selectedCategory}
           </h2>
           <span className="text-sm text-slate-500">
-            {isLoadingRemote ? 'Đang tải...' : `Tìm thấy ${filteredProducts.length} kết quả`}
+            {showLoadingPlaceholder
+              ? 'Đang tải...'
+              : filteredProducts.length === 0
+                ? 'Không tìm thấy kết quả'
+                : `Tìm thấy ${filteredProducts.length} kết quả`}
           </span>
         </div>
 
@@ -461,27 +483,33 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
               />
             </div>
           </>
+        ) : showLoadingPlaceholder ? (
+          <MarketplaceLoadingState />
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="flex flex-col items-center justify-center py-20 text-center" aria-live="polite">
             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
               <Search className="text-slate-400" size={32} />
             </div>
-            <h3 className="text-lg font-medium text-slate-900">Không tìm thấy kết quả</h3>
-            <p className="text-slate-500 max-w-xs mx-auto mt-2">Thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác.</p>
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedCategory('Tất cả');
-                setMinPrice('');
-                setMaxPrice('');
-                setMinQuality('0');
-                setMaxDistanceKm('');
-                setSortBy('newest');
-              }}
-              className="mt-6 text-emerald-600 font-medium hover:underline"
-            >
-              Xóa bộ lọc
-            </button>
+            {showEmptyState && (
+              <>
+                <h3 className="text-lg font-medium text-slate-900">Không tìm thấy kết quả</h3>
+                <p className="text-slate-500 max-w-xs mx-auto mt-2">Thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác.</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('Tất cả');
+                    setMinPrice('');
+                    setMaxPrice('');
+                    setMinQuality('0');
+                    setMaxDistanceKm('');
+                    setSortBy('newest');
+                  }}
+                  className="mt-6 text-emerald-600 font-medium hover:underline"
+                >
+                  Xóa bộ lọc
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -498,6 +526,29 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({ user, onLoginR
 };
 
 // --- Sub-components ---
+
+const MarketplaceLoadingState: React.FC = () => {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center" aria-live="polite" aria-busy="true">
+      <div className="relative mb-5">
+        <div className="h-20 w-20 rounded-full bg-emerald-50" />
+        <Loader2 className="absolute inset-0 m-auto animate-spin text-emerald-600" size={34} />
+      </div>
+      <h3 className="text-lg font-medium text-slate-900">Đang tải sản phẩm...</h3>
+      <p className="text-slate-500 max-w-xs mx-auto mt-2">Hệ thống đang tìm các tin đăng phù hợp cho bạn.</p>
+      <div className="mt-4 flex items-center gap-1.5">
+        {[0, 1, 2].map((idx) => (
+          <motion.span
+            key={idx}
+            className="h-2 w-2 rounded-full bg-emerald-500"
+            animate={{ opacity: [0.3, 1, 0.3], y: [0, -4, 0] }}
+            transition={{ duration: 0.9, repeat: Infinity, delay: idx * 0.15, ease: 'easeInOut' }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const ProductCard: React.FC<{
   product: Product;

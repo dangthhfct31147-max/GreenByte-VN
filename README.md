@@ -22,6 +22,7 @@ Sàn thương mại điện tử phụ phẩm nông nghiệp & Bản đồ ô nh
     npx prisma generate
     npx prisma db push
     npm run db:seed # (Check prisma/seed.ts)
+    npm run db:seed:ai-test # Seed thêm dữ liệu tương tác AI (view/cart/inquiry/accepted)
     ```
 
 4.  **Run Dev**
