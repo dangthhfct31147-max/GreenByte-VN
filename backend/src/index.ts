@@ -87,18 +87,33 @@ app.use(
     }),
 );
 
-app.use(
-    cors({
-        origin: (origin, callback) => {
-            if (!origin) return callback(null, true);
-            if (allowedOrigins.has(origin)) return callback(null, true);
-            return callback(new Error('Not allowed by CORS'));
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
-    }),
-);
+const strictApiCorsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.has(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+};
+const strictApiCors = cors(strictApiCorsOptions);
+const publicReadCors = cors({
+    origin: '*',
+    credentials: false,
+    methods: ['GET', 'HEAD', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+});
+
+app.use((req, res, next) => {
+    const isPublicReadRoute = !req.path.startsWith('/api') && ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+
+    if (isPublicReadRoute) {
+        return publicReadCors(req, res, next);
+    }
+
+    return strictApiCors(req, res, next);
+});
 
 // Basic CSRF hardening for cookie-based auth:
 // If a browser sends a cross-origin state-changing request, block it.
