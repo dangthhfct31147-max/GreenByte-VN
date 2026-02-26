@@ -419,9 +419,9 @@ export const HomePage = ({
                 <p className="text-sm text-slate-500">Cá nhân hóa theo thói quen tiêu dùng và hoạt động cộng đồng của bạn.</p>
               </div>
               {recommendationHints.length > 0 && (
-                <div className="flex flex-nowrap gap-2 overflow-x-auto max-w-full sm:justify-end">
+                <div className="flex flex-wrap gap-2 max-w-full sm:justify-end">
                   {recommendationHints.map((hint) => (
-                    <span key={hint} className="shrink-0 whitespace-nowrap text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                    <span key={hint} className="max-w-full text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 break-words">
                       {hint}
                     </span>
                   ))}
