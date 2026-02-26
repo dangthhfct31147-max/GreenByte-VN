@@ -174,7 +174,23 @@ function initRedis(): Redis | null {
     }
 
     try {
-        const family = readIntEnv('REDIS_FAMILY', 0); // 0 means auto/undefined
+        let parsed: URL | undefined;
+        try {
+            parsed = new URL(redisUrl);
+        } catch {
+            parsed = undefined;
+        }
+
+        const redisHost = parsed?.hostname;
+        const internalHost = isInternalRedisHost(redisHost);
+        const disableOnDnsError = readBoolEnv('REDIS_DISABLE_ON_ENOTFOUND', true);
+
+        let family = readIntEnv('REDIS_FAMILY', 0); // 0 means auto/undefined
+        if (family === 0 && isRailway && internalHost) {
+            // Railway private network uses IPv6 exclusively.
+            family = 6;
+        }
+
         const connectTimeout = readIntEnv('REDIS_CONNECT_TIMEOUT_MS', isProduction ? 15000 : 5000);
         const commandTimeout = readIntEnv('REDIS_COMMAND_TIMEOUT_MS', isProduction ? 5000 : 3000);
         const enableReadyCheck = readBoolEnv('REDIS_ENABLE_READY_CHECK', true);
@@ -195,13 +211,6 @@ function initRedis(): Redis | null {
             }
         }
 
-        let parsed: URL | undefined;
-        try {
-            parsed = new URL(redisUrl);
-        } catch {
-            parsed = undefined;
-        }
-
         const tlsForced = process.env.REDIS_TLS !== undefined;
         const portSuggestsTls = parsed?.port === '6380';
         const tlsEnabled = tlsForced
@@ -213,10 +222,6 @@ function initRedis(): Redis | null {
         const requireTlsInProd = requireTlsForced
             ? readBoolEnv('REDIS_REQUIRE_TLS_IN_PROD', true)
             : true;
-
-        const redisHost = parsed?.hostname;
-        const internalHost = isInternalRedisHost(redisHost);
-        const disableOnDnsError = readBoolEnv('REDIS_DISABLE_ON_ENOTFOUND', true);
 
         if (!isRailway && redisHost && /(^|\.)railway\.internal$/i.test(redisHost)) {
             console.warn(
