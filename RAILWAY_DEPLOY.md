@@ -46,6 +46,7 @@ Vào tab **Variables** và set các giá trị sau:
 ### Bước 3: Database & Redis (Khuyên dùng)
 1. **PostgreSQL**: Trong Railway, bấm **New** -> **Database** -> **Add PostgreSQL**. Lấy `CONNECTION_URL` gán vào `DATABASE_URL`.
 2. **Redis**: Bấm **New** -> **Database** -> **Add Redis**. Railway sẽ tự động tạo biến `REDIS_URL`.
+   - Thêm `REDIS_FAMILY=0` để bật DNS dual-stack (tránh lỗi `ENOTFOUND` do lệch IPv4/IPv6).
 
 ### Bước 4.1: Deploy Backend Service
 1. Tạo Service mới: **New** -> **GitHub Repo** -> Chọn `GreenByte`.

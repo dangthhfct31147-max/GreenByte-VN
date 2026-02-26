@@ -57,6 +57,13 @@ function readIntEnv(name: string, defaultValue: number): number {
     return Number.isFinite(n) ? n : defaultValue;
 }
 
+function readIntEnvOptional(name: string): number | undefined {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || String(raw).trim() === '') return undefined;
+    const n = parseInt(String(raw), 10);
+    return Number.isFinite(n) ? n : undefined;
+}
+
 function isInternalRedisHost(hostname: string | undefined): boolean {
     if (!hostname) return false;
     const h = String(hostname).toLowerCase();
@@ -185,10 +192,21 @@ function initRedis(): Redis | null {
         const internalHost = isInternalRedisHost(redisHost);
         const disableOnDnsError = readBoolEnv('REDIS_DISABLE_ON_ENOTFOUND', true);
 
-        let family = readIntEnv('REDIS_FAMILY', 0); // 0 means auto/undefined
-        if (family === 0 && isRailway && internalHost) {
-            // Railway private network uses IPv6 exclusively.
-            family = 6;
+        const configuredFamily = readIntEnvOptional('REDIS_FAMILY');
+        let family: 0 | 4 | 6 | undefined;
+        if (configuredFamily !== undefined) {
+            if (configuredFamily === 0 || configuredFamily === 4 || configuredFamily === 6) {
+                family = configuredFamily;
+            } else {
+                console.warn(
+                    `⚠️ Invalid REDIS_FAMILY="${configuredFamily}". ` +
+                    'Supported values: 0 (dual-stack), 4 (IPv4), 6 (IPv6).'
+                );
+            }
+        } else if (isRailway && internalHost) {
+            // Railway private networking can be dual-stack or IPv6-only.
+            // family=0 works safely in both cases.
+            family = 0;
         }
 
         const connectTimeout = readIntEnv('REDIS_CONNECT_TIMEOUT_MS', isProduction ? 15000 : 5000);
@@ -261,7 +279,7 @@ function initRedis(): Redis | null {
             },
         };
 
-        if (family === 4 || family === 6) {
+        if (family !== undefined) {
             options.family = family;
         }
 
@@ -277,7 +295,8 @@ function initRedis(): Redis | null {
 
         console.log(
             `🔌 Redis connecting to ${getRedisTargetForLogs(redisUrl, tlsEnabled)}${tlsEnabled ? ' (TLS)' : ''}` +
-            (redisUrlSource ? ` [${redisUrlSource}]` : '')
+            (redisUrlSource ? ` [${redisUrlSource}]` : '') +
+            (family !== undefined ? ` [family=${family}]` : '')
         );
 
         // reset diagnostics on new init
